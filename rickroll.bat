@@ -1,2 +1,0 @@
-@echo off
-start https://youtu.be/dQw4w9WgXcQ?si=o1TOOkB01X07AWNb
