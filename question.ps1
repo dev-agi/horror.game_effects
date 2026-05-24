@@ -22,21 +22,21 @@ $bgColorG = [int]($p.Menu.BackgroundColor.G * 255)
 $bgColorB = [int]($p.Menu.BackgroundColor.B * 255)
 $mainForm.BackColor = [System.Drawing.Color]::FromArgb($bgColorR, $bgColorG, $bgColorB)
 
-# HTML etiketlerini temizleyerek düz metne çeviriyoruz
+# HTML taglarını temizleyen Regex (Sadece içindeki düz metni alır, örn: "Use?")
 $cleanQuestion = $p.Question -replace '<[^>]*>', ''
 
 $lblQuestion = New-Object System.Windows.Forms.Label
 $lblQuestion.Text = $cleanQuestion
 $lblQuestion.Width = [int]($p.Menu.AppSize.X) - 40
 $lblQuestion.Height = 60
-$lblQuestion.Location = New-Object System.Drawing.Point(20, 20)
+$lblQuestion.Location = New-Object System.Drawing.Point(20, 30)
 $lblQuestion.Font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
-$lblQuestion.ForeColor = [System.Drawing.Color]::Red # HTML'deki kırmızı rengi simgelemek için ayarlandı
+$lblQuestion.ForeColor = [System.Drawing.Color]::White
 $lblQuestion.TextAlign = "MiddleCenter"
 $mainForm.Controls.Add($lblQuestion)
 
 $answersObj = $p.Answers
-$buttonY = 100
+$buttonY = 110
 $buttonWidth = [int]($p.Menu.AppSize.X) - 40
 
 foreach ($prop in $answersObj.PSObject.Properties) {
@@ -75,7 +75,7 @@ foreach ($prop in $answersObj.PSObject.Properties) {
         })
         
         $mainForm.Controls.Add($btn)
-        $buttonY += 55
+        $buttonY += 60
     }
 }
 
