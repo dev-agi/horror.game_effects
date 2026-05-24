@@ -154,6 +154,7 @@ function respond(id) {
         $timer.add_Tick({ $mainForm.Close() })
         $timer.Start()
     }
-
+    
+    $mainForm.ControlBox = $false
     $mainForm.ShowDialog()
 }
