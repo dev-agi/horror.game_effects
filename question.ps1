@@ -2,46 +2,12 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $uid = $args[0]
-$jsonPath = "$PSScriptRoot\params_$uid.json"
+$p = Get-Content "$PSScriptRoot\params_$uid.json" -Raw | ConvertFrom-Json
 
-Write-Host "=================== DEBUG BASLADI ===================" -ForegroundColor Cyan
-Write-Host "Okunacak dosya yolu: $jsonPath"
-
-if (-not (Test-Path $jsonPath)) {
-    Write-Host "HATA: JSON dosyasi bulunamadi!" -ForegroundColor Red
-    exit
-}
-
-$rawJson = Get-Content $jsonPath -Raw -Encoding utf8
-Write-Host "Roblox'tan Gelen Ham JSON İçeriği:" -ForegroundColor Yellow
-Write-Host $rawJson
-
-try {
-    $p = ConvertFrom-Json $rawJson
-    Write-Host "JSON basariyla nesneye donusturuldu." -ForegroundColor Green
-} catch {
-    Write-Host "HATA: JSON donusumu sirasinda hata olustu: $_" -ForegroundColor Red
-}
-
-# Boyut Ayıklama Debug
-$width = 500
-$height = 500
-if ($p.Menu.AppSize.X) { 
-    $width = [int]$p.Menu.AppSize.X 
-    Write-Host "Gelen Genislik (X): $width" -ForegroundColor Green
-} else {
-    Write-Host "UYARI: AppSize.X bulunamadi, varsayilan (500) kullaniliyor." -ForegroundColor Magenta
-}
-if ($p.Menu.AppSize.Y) { 
-    $height = [int]$p.Menu.AppSize.Y 
-    Write-Host "Gelen Yukseklik (Y): $height" -ForegroundColor Green
-} else {
-    Write-Host "UYARI: AppSize.Y bulunamadi, varsayilan (500) kullaniliyor." -ForegroundColor Magenta
-}
-
+# Ana Form Kurulumu
 $mainForm = New-Object System.Windows.Forms.Form
-$mainForm.Text = "Question - Debug Mode"
-$mainForm.Size = New-Object System.Drawing.Size($width, $height)
+$mainForm.Text = "Sistem Mesajı"
+$mainForm.Size = New-Object System.Drawing.Size($p.Menu.AppSize.X, $p.Menu.AppSize.Y)
 $mainForm.StartPosition = "CenterScreen"
 $mainForm.ControlBox = $false
 $mainForm.TopMost = $true
@@ -52,95 +18,82 @@ if ($p.Menu.LockSize) {
     $mainForm.MinimizeBox = $false
 }
 
-# Arka Plan Rengi Debug
-$bgColor = [System.Drawing.Color]::FromArgb(127, 127, 127)
-if ($p.Menu.BackgroundColor) {
-    $bgR = if ($p.Menu.BackgroundColor.R -le 1) { [int]($p.Menu.BackgroundColor.R * 255) } else { [int]$p.Menu.BackgroundColor.R }
-    $bgG = if ($p.Menu.BackgroundColor.G -le 1) { [int]($p.Menu.BackgroundColor.G * 255) } else { [int]$p.Menu.BackgroundColor.G }
-    $bgB = if ($p.Menu.BackgroundColor.B -le 1) { [int]($p.Menu.BackgroundColor.B * 255) } else { [int]$p.Menu.BackgroundColor.B }
-    $bgColor = [System.Drawing.Color]::FromArgb($bgR, $bgG, $bgB)
-    Write-Host "Arka Plan Rengi Hesaplandi: R=$bgR, G=$bgG, B=$bgB" -ForegroundColor Green
-} else {
-    Write-Host "UYARI: BackgroundColor bulunamadi, varsayilan gri renk kullaniliyor." -ForegroundColor Magenta
-}
-$mainForm.BackColor = $bgColor
+# Windows 11 Koyu Tema Grisi (Arka plan)
+$mainForm.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
 
-# Soru Basligi Debug
-Write-Host "Gelen Soru Metni: $($p.Question)" -ForegroundColor Green
+# Soru Alanı (Modern Segoe UI Fontu)
 $lblQuestion = New-Object System.Windows.Forms.Label
-$lblQuestion.Text = if ($p.Question) { $p.Question } else { "Soru yüklenemedi?" }
-$lblQuestion.Width = $width - 40
+$lblQuestion.Text = $p.Question
+$lblQuestion.Width = [int]($p.Menu.AppSize.X) - 60
 $lblQuestion.Height = 80
-$lblQuestion.Location = New-Object System.Drawing.Point(20, 40)
-$lblQuestion.Font = New-Object System.Drawing.Font("Arial", 16, [System.Drawing.FontStyle]::Bold)
+$lblQuestion.Location = New-Object System.Drawing.Point(30, 40)
+$lblQuestion.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $lblQuestion.ForeColor = [System.Drawing.Color]::White
 $lblQuestion.TextAlign = "MiddleCenter"
 $mainForm.Controls.Add($lblQuestion)
 
-# Butonlar / Cevaplar Debug
-$buttonY = 160
-$buttonWidth = $width - 40
+# Dinamik Buton Yerleşimi Hesaplama (Butonları Formun Ortasına Toplamak İçin)
+$answersObj = $p.Answers
+$properties = $answersObj.PSObject.Properties
+$buttonCount = ($properties | Where-Object { $_.Value.Text }).Count
 
-if ($p.Answers) {
-    $properties = $p.Answers.PSObject.Properties
-    Write-Host "Tespit edilen secenek sayisi: $($properties.Count)" -ForegroundColor Green
+$btnHeight = 45
+$btnSpacing = 15
+$totalButtonsHeight = ($buttonCount * $btnHeight) + (($buttonCount - 1) * $btnSpacing)
+
+# Butonların başlayacağı Y koordinatını tam ortalayacak şekilde hesaplıyoruz
+$startY = [int](($p.Menu.AppSize.Y - $totalButtonsHeight) / 2) + 30
+if ($startY -lt 140) { $startY = 140 } # Soru alanının üzerine binmesini engelle
+
+$buttonWidth = [int]($p.Menu.AppSize.X) - 80
+$buttonX = 40
+
+foreach ($prop in $properties) {
+    $ansId = $prop.Name
+    $ansData = $prop.Value
     
-    foreach ($prop in $properties) {
-        $ansId = $prop.Name
-        $ansData = $prop.Value
-        Write-Host "Secenek Islemesi -> ID: $ansId, Metin: $($ansData.Text)" -ForegroundColor Yellow
+    if ($ansData.Text) {
+        $btn = New-Object System.Windows.Forms.Button
+        $btn.Text = $ansData.Text
+        $btn.Size = New-Object System.Drawing.Size($buttonWidth, $btnHeight)
+        $btn.Location = New-Object System.Drawing.Point($buttonX, $startY)
         
-        if ($ansData.Text) {
-            $btn = New-Object System.Windows.Forms.Button
-            $btn.Text = $ansData.Text
-            $btn.Size = New-Object System.Drawing.Size($buttonWidth, 50)
-            $btn.Location = New-Object System.Drawing.Point(20, $buttonY)
-            $btn.FlatStyle = "Flat"
-            $btn.Font = New-Object System.Drawing.Font("Arial", 12, [System.Drawing.FontStyle]::Bold)
-            $btn.ForeColor = [System.Drawing.Color]::White
-            
-            $btnBgColor = [System.Drawing.Color]::DimGray
-            if ($ansData.BackgroundColor) {
-                $bR = if ($ansData.BackgroundColor.R -le 1) { [int]($ansData.BackgroundColor.R * 255) } else { [int]$ansData.BackgroundColor.R }
-                $bG = if ($ansData.BackgroundColor.G -le 1) { [int]($ansData.BackgroundColor.G * 255) } else { [int]$ansData.BackgroundColor.G }
-                $bB = if ($ansData.BackgroundColor.B -le 1) { [int]($ansData.BackgroundColor.B * 255) } else { [int]$ansData.BackgroundColor.B }
-                $btnBgColor = [System.Drawing.Color]::FromArgb($bR, $bG, $bB)
-            }
-            $btn.BackColor = $btnBgColor
-            
-            if ($ansData.BorderColor) {
-                $bdR = if ($ansData.BorderColor.R -le 1) { [int]($ansData.BorderColor.B * 255) } else { [int]$ansData.BorderColor.R }
-                $bdG = if ($ansData.BorderColor.G -le 1) { [int]($ansData.BorderColor.G * 255) } else { [int]$ansData.BorderColor.G }
-                $bdB = if ($ansData.BorderColor.B -le 1) { [int]($ansData.BorderColor.B * 255) } else { [int]$ansData.BorderColor.B }
-                $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb($bdR, $bdG, $bdB)
-            }
-            
-            # Tiklama Olayi Loglamasi
-            $btn.Add_Click({
-                Write-Host "Butona basildi! Secilen ID: $ansId" -ForegroundColor Green
-                $outputPath = "$PSScriptRoot\..\response_$($p.connectionId).json"
-                
-                $response = @{
-                    connectionId = $p.connectionId
-                    selected = $ansId
-                } | ConvertTo-Json -Compress
-                
-                Write-Host "Yazilacak Cevap Dosyasi: $outputPath" -ForegroundColor Yellow
-                Write-Host "Yazilacak Cevap Icerigi: $response" -ForegroundColor Yellow
-                
-                [System.IO.File]::WriteAllText($outputPath, $response)
-                Write-Host "Cevap dosyasi basariyla yazildi. Form kapatiliyor..." -ForegroundColor Green
-                $mainForm.Close()
-            })
-            
-            $mainForm.Controls.Add($btn)
-            $buttonY += 65
+        # Modern Flat Tasarım (Eski Windows 3.1 tarzı çıkıntıları yok eder)
+        $btn.FlatStyle = "Flat"
+        $btn.FlatAppearance.BorderSize = 1
+        $btn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Regular)
+        $btn.ForeColor = [System.Drawing.Color]::White
+        $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
+        
+        # Roblox'tan gelen özel renkler
+        $btnBgR = [int]($ansData.BackgroundColor.R * 255)
+        $btnBgG = [int]($ansData.BackgroundColor.G * 255)
+        $btnBgB = [int]($ansData.BackgroundColor.B * 255)
+        $btn.BackColor = [System.Drawing.Color]::FromArgb($btnBgR, $btnBgG, $btnBgB)
+        
+        if ($ansData.BorderColor) {
+            $btnBdR = [int]($ansData.BorderColor.R * 255)
+            $btnBdG = [int]($ansData.BorderColor.G * 255)
+            $btnBdB = [int]($ansData.BorderColor.B * 255)
+            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb($btnBdR, $btnBdG, $btnBdB)
+        } else {
+            $btn.FlatAppearance.BorderColor = $btn.BackColor
         }
+        
+        # Tıklama ve Yanıt Sistemi
+        $btn.Add_Click({
+            $response = @{
+                connectionId = $p.connectionId
+                selected = $ansId
+            } | ConvertTo-Json -Compress
+            
+            [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
+            $mainForm.Close()
+        })
+        
+        $mainForm.Controls.Add($btn)
+        $startY += ($btnHeight + $btnSpacing)
     }
-} else {
-    Write-Host "HATA: JSON icinde 'Answers' objesi bulunamadi!" -ForegroundColor Red
 }
 
-Write-Host "Form gosteriliyor (ShowDialog)..." -ForegroundColor Cyan
 $mainForm.ShowDialog()
-Write-Host "=================== DEBUG BITTI ===================" -ForegroundColor Cyan
