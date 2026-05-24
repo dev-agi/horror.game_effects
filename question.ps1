@@ -1,5 +1,3 @@
-"Script started, connectionId: $connectionId" | Out-File "$PSScriptRoot\..\debug.log" -Encoding utf8
-
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -84,7 +82,6 @@ if ($p.HTML -eq $true) {
         $btn.Location = New-Object System.Drawing.Point(20, $yPos)
         $btn.Size = New-Object System.Drawing.Size(240, 35)
         $btn.add_Click({
-            "Button clicked: $btnId" | Out-File "$PSScriptRoot\..\debug2.log" -Encoding utf8 -Append
             @{ connectionId = $connectionId; selected = $btnId } | ConvertTo-Json | Out-File $responseFile -Encoding utf8
             $mainForm.Close()
         }.GetNewClosure())
