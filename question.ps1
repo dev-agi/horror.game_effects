@@ -4,17 +4,14 @@ Add-Type -AssemblyName System.Drawing
 $uid = $args[0]
 $jsonPath = "$PSScriptRoot\params_$uid.json"
 
-# Dosya okuma hatasini engellemek icin UTF8 ile aciyoruz
 $rawJson = Get-Content $jsonPath -Raw -Encoding utf8
 $p = ConvertFrom-Json $rawJson
 
 $script:isAnswered = $false
 
 $mainForm = New-Object System.Windows.Forms.Form
-# Turkce karakter sorununu tamamen kaldirmak icin basligi degistirdik
 $mainForm.Text = "Sistem Mesaji"
 
-# Boyutlari garantiye aliyoruz
 $w = 500
 $h = 500
 if ($p.Menu.AppSize.X) { $w = [int]$p.Menu.AppSize.X }
@@ -89,16 +86,19 @@ foreach ($prop in $properties) {
             $btn.FlatAppearance.BorderColor = $btn.BackColor
         }
         
-        $btn.Add_Click({
-            $script:isAnswered = $true
-            $response = @{
-                connectionId = $p.connectionId
-                selected = $ansId
+        # COZUM: Her buton icin o anki $ansId degerini iceriye hapsediyoruz (Bind islemi)
+        $clickCode = $ExecutionContext.InvokeCommand.NewScriptBlock(@"
+            `$script:isAnswered = `$true
+            `$response = @{
+                connectionId = '$($p.connectionId)'
+                selected = '$ansId'
             } | ConvertTo-Json -Compress
             
-            [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
-            $mainForm.Close()
-        })
+            [System.IO.File]::WriteAllText("$($PSScriptRoot.Replace('\','\\'))\\..\\response_$($p.connectionId).json", `$response)
+            `$mainForm.Close()
+"@)
+        
+        $btn.Add_Click($clickCode)
         
         $mainForm.Controls.Add($btn)
         $startY += ($btnHeight + $btnSpacing)
@@ -109,7 +109,7 @@ $mainForm.Add_FormClosing({
     if (-not $script:isAnswered) {
         $cancelResponse = @{
             connectionId = $p.connectionId
-            selected = "canceled"
+            selected = "canceled"   
         } | ConvertTo-Json -Compress
         
         [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $cancelResponse)
