@@ -13,6 +13,7 @@ $mainForm.StartPosition = "CenterScreen"
 $mainForm.FormBorderStyle = "FixedDialog"
 $mainForm.MaximizeBox = $false
 $mainForm.MinimizeBox = $false
+$mainForm.TopMost = $true
 
 if ($p.Menu.LockSize) {
     $mainForm.MaximumSize = $mainForm.Size
