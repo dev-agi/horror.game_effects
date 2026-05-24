@@ -22,17 +22,21 @@ $bgColorG = [int]($p.Menu.BackgroundColor.G * 255)
 $bgColorB = [int]($p.Menu.BackgroundColor.B * 255)
 $mainForm.BackColor = [System.Drawing.Color]::FromArgb($bgColorR, $bgColorG, $bgColorB)
 
-$webBrowser = New-Object System.Windows.Forms.WebBrowser
-$webBrowser.Width = [int]($p.Menu.AppSize.X) - 40
-$webBrowser.Height = 120
-$webBrowser.Location = New-Object System.Drawing.Point(20, 20)
-$webBrowser.ScrollBarsEnabled = $false
-$webBrowser.ScriptErrorsSuppressed = $true
-$webBrowser.DocumentText = "<html><body style='background-color:rgb($bgColorR,$bgColorG,$bgColorB); font-family:sans-serif; margin:0; padding:0;'>$($p.Question)</body></html>"
-$mainForm.Controls.Add($webBrowser)
+# HTML etiketlerini temizleyerek düz metne çeviriyoruz
+$cleanQuestion = $p.Question -replace '<[^>]*>', ''
+
+$lblQuestion = New-Object System.Windows.Forms.Label
+$lblQuestion.Text = $cleanQuestion
+$lblQuestion.Width = [int]($p.Menu.AppSize.X) - 40
+$lblQuestion.Height = 60
+$lblQuestion.Location = New-Object System.Drawing.Point(20, 20)
+$lblQuestion.Font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
+$lblQuestion.ForeColor = [System.Drawing.Color]::Red # HTML'deki kırmızı rengi simgelemek için ayarlandı
+$lblQuestion.TextAlign = "MiddleCenter"
+$mainForm.Controls.Add($lblQuestion)
 
 $answersObj = $p.Answers
-$buttonY = 160
+$buttonY = 100
 $buttonWidth = [int]($p.Menu.AppSize.X) - 40
 
 foreach ($prop in $answersObj.PSObject.Properties) {
@@ -45,7 +49,8 @@ foreach ($prop in $answersObj.PSObject.Properties) {
         $btn.Size = New-Object System.Drawing.Size($buttonWidth, 45)
         $btn.Location = New-Object System.Drawing.Point(20, $buttonY)
         $btn.FlatStyle = "Flat"
-        $btn.Font = New-Object System.Drawing.Size("Arial", 11)
+        $btn.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
+        $btn.ForeColor = [System.Drawing.Color]::White
         
         $btnBgR = [int]($ansData.BackgroundColor.R * 255)
         $btnBgG = [int]($ansData.BackgroundColor.G * 255)
