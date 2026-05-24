@@ -4,14 +4,18 @@ Add-Type -AssemblyName System.Drawing
 $uid = $args[0]
 $p = Get-Content "$PSScriptRoot\params_$uid.json" -Raw | ConvertFrom-Json
 
-# Script genelinde kullanici secim yapti mı kontrolü
+# Kullanıcı butonlara bastı mı kontrolü (FormClosing için)
 $script:isAnswered = $false
 
 $mainForm = New-Object System.Windows.Forms.Form
 $mainForm.Text = "Sistem Mesajı"
-$mainForm.Size = New-Object System.Drawing.Size($p.Menu.AppSize.X, $p.Menu.AppSize.Y)
+
+# ÇÖZÜM: Boyutu dış pencereye değil, İÇ çalışma alanına (ClientSize) zorluyoruz.
+# Böylece Windows kenarlıkları veya X butonu boyutu asla bozamaz.
+$mainForm.ClientSize = New-Object System.Drawing.Size($p.Menu.AppSize.X, $p.Menu.AppSize.Y)
+
 $mainForm.StartPosition = "CenterScreen"
-$mainForm.ControlBox = $true # Test edebilmen veya acik birakabilmen icin true yapildi
+$mainForm.ControlBox = $false  # X butonunu gizlemek istiyorsan $false, açmak istiyorsan $true yapabilirsin
 $mainForm.TopMost = $true
 
 if ($p.Menu.LockSize) {
@@ -20,20 +24,21 @@ if ($p.Menu.LockSize) {
     $mainForm.MinimizeBox = $false
 }
 
+# Modern Koyu Tema Arka Planı
 $mainForm.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
 
-# Soru Alani
+# Soru Etiketi
 $lblQuestion = New-Object System.Windows.Forms.Label
 $lblQuestion.Text = $p.Question
-$lblQuestion.Width = [int]($p.Menu.AppSize.X) - 60
-$lblQuestion.Height = 80
-$lblQuestion.Location = New-Object System.Drawing.Point(30, 40)
+$lblQuestion.Width = [int]($p.Menu.AppSize.X) - 40
+$lblQuestion.Height = 60
+$lblQuestion.Location = New-Object System.Drawing.Point(20, 30)
 $lblQuestion.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $lblQuestion.ForeColor = [System.Drawing.Color]::White
 $lblQuestion.TextAlign = "MiddleCenter"
 $mainForm.Controls.Add($lblQuestion)
 
-# Buton Yerlesimi
+# Butonları Matematiksel Olarak Tam Ortala
 $answersObj = $p.Answers
 $properties = $answersObj.PSObject.Properties
 $buttonCount = ($properties | Where-Object { $_.Value.Text }).Count
@@ -42,11 +47,12 @@ $btnHeight = 45
 $btnSpacing = 15
 $totalButtonsHeight = ($buttonCount * $btnHeight) + (($buttonCount - 1) * $btnSpacing)
 
-$startY = [int](($p.Menu.AppSize.Y - $totalButtonsHeight) / 2) + 30
-if ($startY -lt 140) { $startY = 140 }
+# Kalan boşluğa göre Y başlangıcını hesapla
+$startY = [int](($p.Menu.AppSize.Y - $totalButtonsHeight) / 2) + 20
+if ($startY -lt 110) { $startY = 110 } # Sorunun üstüne binmesin
 
-$buttonWidth = [int]($p.Menu.AppSize.X) - 80
-$buttonX = 40
+$buttonWidth = [int]($p.Menu.AppSize.X) - 60
+$buttonX = 30
 
 foreach ($prop in $properties) {
     $ansId = $prop.Name
@@ -57,12 +63,15 @@ foreach ($prop in $properties) {
         $btn.Text = $ansData.Text
         $btn.Size = New-Object System.Drawing.Size($buttonWidth, $btnHeight)
         $btn.Location = New-Object System.Drawing.Point($buttonX, $startY)
+        
+        # Modern Flat Stil
         $btn.FlatStyle = "Flat"
         $btn.FlatAppearance.BorderSize = 1
-        $btn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Regular)
+        $btn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
         $btn.ForeColor = [System.Drawing.Color]::White
         $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
         
+        # Renk Dönüşümleri
         $btnBgR = [int]($ansData.BackgroundColor.R * 255)
         $btnBgG = [int]($ansData.BackgroundColor.G * 255)
         $btnBgB = [int]($ansData.BackgroundColor.B * 255)
@@ -77,9 +86,9 @@ foreach ($prop in $properties) {
             $btn.FlatAppearance.BorderColor = $btn.BackColor
         }
         
-        # Normal Buton Tiklamasi
+        # Tıklama Olayı
         $btn.Add_Click({
-            $script:isAnswered = $true  # Butona basildigini isaretle
+            $script:isAnswered = $true
             $response = @{
                 connectionId = $p.connectionId
                 selected = $ansId
@@ -94,12 +103,12 @@ foreach ($prop in $properties) {
     }
 }
 
-# KRITIK COZUM: Oyuncu Formu Butonlara Basmadan Çarpıdan Kapatırsa Tetiklenen Olay
+# Oyuncu çarpıdan veya Alt+F4 ile kapatırsa dinle.ps1 donmasın diye önlem
 $mainForm.Add_FormClosing({
     if (-not $script:isAnswered) {
         $cancelResponse = @{
             connectionId = $p.connectionId
-            selected = "canceled" # Roblox tarafında if answer == "canceled" diyerek yakalayabilirsin
+            selected = "canceled"
         } | ConvertTo-Json -Compress
         
         [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $cancelResponse)
