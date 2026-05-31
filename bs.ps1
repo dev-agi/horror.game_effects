@@ -15,8 +15,9 @@ public class WinAPI {
     [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string lpModuleName);
     [DllImport("user32.dll")] public static extern bool BlockInput(bool fBlockIt);
     [DllImport("user32.dll")] public static extern int ShowCursor(bool bShow);
-    [DllImport("user32.dll")] public static extern bool SetSystemCursor(IntPtr hcur, uint id);
     [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+    [DllImport("user32.dll")] public static extern IntPtr CreateCursor(IntPtr hInst, int xHotSpot, int yHotSpot, int nWidth, int nHeight, byte[] pvANDPlane, byte[] pvXORPlane);
+    [DllImport("user32.dll")] public static extern bool SetSystemCursor(IntPtr hcur, uint id);
 
     public delegate IntPtr LowLevelProc(int nCode, IntPtr wParam, IntPtr lParam);
     private static IntPtr hookId = IntPtr.Zero;
@@ -34,49 +35,25 @@ public class WinAPI {
         return CallNextHookEx(hookId, nCode, wParam, lParam);
     }
 
-    public static void HideCursor() {
-        for (int i = 0; i < 20; i++) ShowCursor(false);
-    }
-    public static void ShowCursorAgain() {
-        for (int i = 0; i < 20; i++) ShowCursor(true);
-    }
+    public static void HideCursor() { for (int i = 0; i < 20; i++) ShowCursor(false); }
+    public static void ShowCursorAgain() { for (int i = 0; i < 20; i++) ShowCursor(true); }
 
-    public static void SetBlankCursor() {
-        SystemParametersInfo(0x0057, 0, IntPtr.Zero, 0);
-    }
-}
-"@
-
-Add-Type @"
-using System;
-using System.Drawing;
-using System.Runtime.InteropServices;
-
-public class CursorUtil {
-    [DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
-    [DllImport("user32.dll")] static extern IntPtr CreateCursor(IntPtr hInst, int xHotSpot, int yHotSpot, int nWidth, int nHeight, byte[] pvANDPlane, byte[] pvXORPlane);
-    [DllImport("user32.dll")] static extern bool SetSystemCursor(IntPtr hcur, uint id);
-    [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
-
-    public static void MakeInvisible() {
-        int w = 32; int h = 32;
+    public static void MakeInvisibleCursor() {
         byte[] and = new byte[128]; byte[] xor = new byte[128];
         for (int i = 0; i < 128; i++) { and[i] = 0xFF; xor[i] = 0x00; }
-        IntPtr cur = CreateCursor(IntPtr.Zero, 0, 0, w, h, and, xor);
+        IntPtr cur = CreateCursor(IntPtr.Zero, 0, 0, 32, 32, and, xor);
         uint[] ids = new uint[]{ 32512,32513,32514,32515,32516,32640,32641,32642,32643,32644,32645,32646,32648,32649,32650,32651 };
         foreach (var id in ids) SetSystemCursor(cur, id);
     }
 
-    public static void Restore() {
-        SystemParametersInfo(0x0057, 0, IntPtr.Zero, 0);
-    }
+    public static void RestoreCursors() { SystemParametersInfo(0x0057, 0, IntPtr.Zero, 0); }
 }
 "@
 
 [WinAPI]::InstallHook()
 [WinAPI]::BlockInput($true)
 [WinAPI]::HideCursor()
-[CursorUtil]::MakeInvisible()
+[WinAPI]::MakeInvisibleCursor()
 
 $qrMatrix = @(
     "1111111001101001111111",
@@ -102,35 +79,35 @@ $qrMatrix = @(
     "1111111001011011111110"
 )
 
-function New-QRBitmap($size) {
+function New-QRBitmap($pixelSize) {
     $rows = $qrMatrix.Count
     $cols = $qrMatrix[0].Length
-    $quiet = 3
-    $totalCells = $cols + $quiet * 2
-    $cs = [math]::Floor($size / $totalCells)
-    $actualSize = $cs * $totalCells
+    $quiet = 4
+    $totalW = ($cols + $quiet * 2) * $pixelSize
+    $totalH = ($rows + $quiet * 2) * $pixelSize
 
-    $bmp = New-Object System.Drawing.Bitmap($actualSize, $actualSize)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $bmp = New-Object System.Drawing.Bitmap($totalW, $totalH)
+    $g   = [System.Drawing.Graphics]::FromImage($bmp)
     $g.Clear([System.Drawing.Color]::White)
-
     $black = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Black)
+
     for ($r = 0; $r -lt $rows; $r++) {
         for ($c = 0; $c -lt $cols; $c++) {
             if ($qrMatrix[$r][$c] -eq '1') {
-                $x = ($c + $quiet) * $cs
-                $y = ($r + $quiet) * $cs
-                $g.FillRectangle($black, $x, $y, $cs, $cs)
+                $x = ($c + $quiet) * $pixelSize
+                $y = ($r + $quiet) * $pixelSize
+                $g.FillRectangle($black, $x, $y, $pixelSize, $pixelSize)
             }
         }
     }
+
     $black.Dispose()
     $g.Dispose()
     return $bmp
 }
 
 $screens = [System.Windows.Forms.Screen]::AllScreens
-$forms = @()
+$forms   = @()
 
 foreach ($screen in $screens) {
     $sw = $screen.Bounds.Width
@@ -138,92 +115,93 @@ foreach ($screen in $screens) {
 
     $form = New-Object System.Windows.Forms.Form
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-    $form.TopMost = $true
-    $form.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $form.Bounds = $screen.Bounds
-    $form.ShowInTaskbar = $false
-    $form.KeyPreview = $true
-    $form.Cursor = [System.Windows.Forms.Cursors]::None
+    $form.TopMost         = $true
+    $form.BackColor       = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $form.Bounds          = $screen.Bounds
+    $form.ShowInTaskbar   = $false
+    $form.KeyPreview      = $true
+    $form.Cursor          = [System.Windows.Forms.Cursors]::None
     $form.Add_KeyDown({ $_.SuppressKeyPress = $true; $_.Handled = $true })
 
     $ml = [int]($sw * 0.10)
     $mt = [int]($sh * 0.13)
-    $maxW = $sw - $ml - [int]($sw * 0.05)
 
-    $lFace = New-Object System.Windows.Forms.Label
-    $lFace.Text = ":("
-    $lFace.Font = New-Object System.Drawing.Font("Segoe UI Light", ([int]($sh * 0.13)), [System.Drawing.FontStyle]::Regular)
-    $lFace.ForeColor = [System.Drawing.Color]::White
+    $lFace          = New-Object System.Windows.Forms.Label
+    $lFace.Text     = ":("
+    $lFace.Font     = New-Object System.Drawing.Font("Segoe UI Light", ([int]($sh * 0.13)), [System.Drawing.FontStyle]::Regular)
+    $lFace.ForeColor= [System.Drawing.Color]::White
     $lFace.AutoSize = $true
     $lFace.Location = New-Object System.Drawing.Point($ml, $mt)
     $form.Controls.Add($lFace)
 
-    $msgTop = $mt + [int]($sh * 0.25)
-    $msgFs = [math]::Max(10, [int]($sh * 0.024))
-    $lMsg = New-Object System.Windows.Forms.Label
-    $lMsg.Text = "Your PC ran into a problem and needs to restart. We're just collecting some error info, and then we'll restart for you."
-    $lMsg.Font = New-Object System.Drawing.Font("Segoe UI", $msgFs, [System.Drawing.FontStyle]::Regular)
+    $msgTop      = $mt + [int]($sh * 0.25)
+    $msgFs       = [math]::Max(10, [int]($sh * 0.024))
+    $lMsg        = New-Object System.Windows.Forms.Label
+    $lMsg.Text   = "Your PC ran into a problem and needs to restart. We're just collecting some error info, and then we'll restart for you."
+    $lMsg.Font   = New-Object System.Drawing.Font("Segoe UI", $msgFs, [System.Drawing.FontStyle]::Regular)
     $lMsg.ForeColor = [System.Drawing.Color]::White
-    $lMsg.AutoSize = $false
-    $lMsg.Width = [int]($sw * 0.55)
-    $lMsg.Height = [int]($sh * 0.12)
-    $lMsg.Location = New-Object System.Drawing.Point($ml, $msgTop)
+    $lMsg.AutoSize  = $false
+    $lMsg.Width     = [int]($sw * 0.55)
+    $lMsg.Height    = [int]($sh * 0.12)
+    $lMsg.Location  = New-Object System.Drawing.Point($ml, $msgTop)
     $form.Controls.Add($lMsg)
 
-    $pctTop = $msgTop + [int]($sh * 0.14)
-    $pctFs = [math]::Max(10, [int]($sh * 0.024))
-    $lPct = New-Object System.Windows.Forms.Label
-    $lPct.Text = "0% complete"
-    $lPct.Font = New-Object System.Drawing.Font("Segoe UI", $pctFs, [System.Drawing.FontStyle]::Regular)
+    $pctTop         = $msgTop + [int]($sh * 0.14)
+    $pctFs          = [math]::Max(10, [int]($sh * 0.024))
+    $lPct           = New-Object System.Windows.Forms.Label
+    $lPct.Text      = "0% complete"
+    $lPct.Font      = New-Object System.Drawing.Font("Segoe UI", $pctFs, [System.Drawing.FontStyle]::Regular)
     $lPct.ForeColor = [System.Drawing.Color]::White
-    $lPct.AutoSize = $true
-    $lPct.Location = New-Object System.Drawing.Point($ml, $pctTop)
+    $lPct.AutoSize  = $true
+    $lPct.Location  = New-Object System.Drawing.Point($ml, $pctTop)
     $form.Controls.Add($lPct)
 
-    $qrTop = $pctTop + [int]($sh * 0.11)
-    $qrSize = [int]($sh * 0.12)
-    $qrBmp = New-QRBitmap $qrSize
+    $qrTop    = $pctTop + [int]($sh * 0.11)
+    $pixSz    = [math]::Max(3, [int]($sh / 130))
+    $qrBmp    = New-QRBitmap $pixSz
+    $qrW      = $qrBmp.Width
+    $qrH      = $qrBmp.Height
 
-    $qrBox = New-Object System.Windows.Forms.PictureBox
-    $qrBox.Size = New-Object System.Drawing.Size($qrBmp.Width, $qrBmp.Height)
+    $qrBox          = New-Object System.Windows.Forms.PictureBox
     $qrBox.Location = New-Object System.Drawing.Point($ml, $qrTop)
-    $qrBox.Image = $qrBmp
+    $qrBox.Size     = New-Object System.Drawing.Size($qrW, $qrH)
+    $qrBox.Image    = $qrBmp
     $qrBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Normal
-    $qrBox.BackColor = [System.Drawing.Color]::White
+    $qrBox.BackColor= [System.Drawing.Color]::White
     $form.Controls.Add($qrBox)
 
-    $infoX = $ml + $qrBmp.Width + [int]($sw * 0.018)
-    $infoFs = [math]::Max(8, [int]($sh * 0.013))
+    $infoX    = $ml + $qrW + [int]($sw * 0.018)
+    $infoFs   = [math]::Max(8, [int]($sh * 0.013))
     $infoFont = New-Object System.Drawing.Font("Segoe UI", $infoFs, [System.Drawing.FontStyle]::Regular)
-    $infoW = $sw - $infoX - [int]($sw * 0.05)
+    $infoW    = $sw - $infoX - [int]($sw * 0.05)
 
-    $lI1 = New-Object System.Windows.Forms.Label
-    $lI1.Text = "For more information about this issue and possible fixes, visit https://www.windows.com/stopcode"
-    $lI1.Font = $infoFont
-    $lI1.ForeColor = [System.Drawing.Color]::White
+    $lI1          = New-Object System.Windows.Forms.Label
+    $lI1.Text     = "For more information about this issue and possible fixes, visit https://www.windows.com/stopcode"
+    $lI1.Font     = $infoFont
+    $lI1.ForeColor= [System.Drawing.Color]::White
     $lI1.AutoSize = $false
-    $lI1.Width = $infoW
-    $lI1.Height = [int]($sh * 0.07)
+    $lI1.Width    = $infoW
+    $lI1.Height   = [int]($sh * 0.07)
     $lI1.Location = New-Object System.Drawing.Point($infoX, $qrTop)
     $form.Controls.Add($lI1)
 
-    $lI2 = New-Object System.Windows.Forms.Label
-    $lI2.Text = "If you call a support person, give them this info:"
-    $lI2.Font = $infoFont
-    $lI2.ForeColor = [System.Drawing.Color]::White
+    $lI2          = New-Object System.Windows.Forms.Label
+    $lI2.Text     = "If you call a support person, give them this info:"
+    $lI2.Font     = $infoFont
+    $lI2.ForeColor= [System.Drawing.Color]::White
     $lI2.AutoSize = $false
-    $lI2.Width = $infoW
-    $lI2.Height = [int]($sh * 0.04)
+    $lI2.Width    = $infoW
+    $lI2.Height   = [int]($sh * 0.04)
     $lI2.Location = New-Object System.Drawing.Point($infoX, ($qrTop + [int]($sh * 0.068)))
     $form.Controls.Add($lI2)
 
-    $lI3 = New-Object System.Windows.Forms.Label
-    $lI3.Text = "Stop code: CRITICAL_PROCESS_DIED"
-    $lI3.Font = $infoFont
-    $lI3.ForeColor = [System.Drawing.Color]::White
+    $lI3          = New-Object System.Windows.Forms.Label
+    $lI3.Text     = "Stop code: CRITICAL_PROCESS_DIED"
+    $lI3.Font     = $infoFont
+    $lI3.ForeColor= [System.Drawing.Color]::White
     $lI3.AutoSize = $false
-    $lI3.Width = $infoW
-    $lI3.Height = [int]($sh * 0.04)
+    $lI3.Width    = $infoW
+    $lI3.Height   = [int]($sh * 0.04)
     $lI3.Location = New-Object System.Drawing.Point($infoX, ($qrTop + [int]($sh * 0.098)))
     $form.Controls.Add($lI3)
 
@@ -235,8 +213,8 @@ foreach ($screen in $screens) {
 }
 
 $startTime = Get-Date
-$endTime = $startTime.AddSeconds($duration)
-$tick = 0
+$endTime   = $startTime.AddSeconds($duration)
+$tick      = 0
 
 while ((Get-Date) -lt $endTime) {
     $elapsed = ((Get-Date) - $startTime).TotalSeconds
@@ -244,7 +222,7 @@ while ((Get-Date) -lt $endTime) {
 
     foreach ($f in $forms) {
         $f.LabelPct.Text = "$percent% complete"
-        $f.Form.TopMost = $true
+        $f.Form.TopMost  = $true
         $f.Form.BringToFront()
         $f.Form.Activate()
         $f.Form.Refresh()
@@ -253,7 +231,7 @@ while ((Get-Date) -lt $endTime) {
     $tick++
     if ($tick % 5 -eq 0) {
         [WinAPI]::HideCursor()
-        [CursorUtil]::MakeInvisible()
+        [WinAPI]::MakeInvisibleCursor()
     }
 
     [System.Windows.Forms.Application]::DoEvents()
@@ -263,7 +241,7 @@ while ((Get-Date) -lt $endTime) {
 [WinAPI]::BlockInput($false)
 [WinAPI]::UninstallHook()
 [WinAPI]::ShowCursorAgain()
-[CursorUtil]::Restore()
+[WinAPI]::RestoreCursors()
 
 foreach ($f in $forms) {
     $f.Form.Close()
