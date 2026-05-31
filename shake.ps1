@@ -25,13 +25,10 @@ public class MouseShake {
     $rng = New-Object System.Random
     while ((Get-Date) -lt $end) {
         [MouseShake]::GetCursorPos([ref]$point)
-        $currentX = $point.X
-        $currentY = $point.Y
         $dx = $rng.Next(-$power, $power+1)
         $dy = $rng.Next(-$power, $power+1)
-        [MouseShake]::SetCursorPos($currentX + $dx, $currentY + $dy)
+        [MouseShake]::SetCursorPos($point.X + $dx, $point.Y + $dy)
         Start-Sleep -Milliseconds 15
-        [MouseShake]::SetCursorPos($currentX, $currentY)
     }
 } else {
     $proc = Get-Process -Name $app -ErrorAction SilentlyContinue | Select-Object -First 1
