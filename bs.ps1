@@ -45,7 +45,6 @@ public class WinAPI {
         uint[] ids = new uint[]{ 32512,32513,32514,32515,32516,32640,32641,32642,32643,32644,32645,32646,32648,32649,32650,32651 };
         foreach (var id in ids) SetSystemCursor(cur, id);
     }
-
     public static void RestoreCursors() { SystemParametersInfo(0x0057, 0, IntPtr.Zero, 0); }
 }
 "@
@@ -79,29 +78,27 @@ $qrMatrix = @(
     "1111111001011011111110"
 )
 
-function New-QRBitmap($pixelSize) {
-    $rows = $qrMatrix.Count
-    $cols = $qrMatrix[0].Length
-    $quiet = 4
-    $totalW = ($cols + $quiet * 2) * $pixelSize
-    $totalH = ($rows + $quiet * 2) * $pixelSize
+function New-QRBitmap($targetSize) {
+    $rows  = $qrMatrix.Count
+    $cols  = $qrMatrix[0].Length
+    $quiet = 3
+    $cs    = [math]::Max(2, [math]::Floor($targetSize / ($cols + $quiet * 2)))
+    $total = ($cols + $quiet * 2) * $cs
 
-    $bmp = New-Object System.Drawing.Bitmap($totalW, $totalH)
+    $bmp = New-Object System.Drawing.Bitmap($total, $total)
     $g   = [System.Drawing.Graphics]::FromImage($bmp)
     $g.Clear([System.Drawing.Color]::White)
-    $black = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Black)
+    $blk = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Black)
 
     for ($r = 0; $r -lt $rows; $r++) {
         for ($c = 0; $c -lt $cols; $c++) {
             if ($qrMatrix[$r][$c] -eq '1') {
-                $x = ($c + $quiet) * $pixelSize
-                $y = ($r + $quiet) * $pixelSize
-                $g.FillRectangle($black, $x, $y, $pixelSize, $pixelSize)
+                $g.FillRectangle($blk, ($c + $quiet) * $cs, ($r + $quiet) * $cs, $cs, $cs)
             }
         }
     }
 
-    $black.Dispose()
+    $blk.Dispose()
     $g.Dispose()
     return $bmp
 }
@@ -124,31 +121,32 @@ foreach ($screen in $screens) {
     $form.Add_KeyDown({ $_.SuppressKeyPress = $true; $_.Handled = $true })
 
     $ml = [int]($sw * 0.10)
-    $mt = [int]($sh * 0.13)
 
+    $faceTop  = [int]($sh * 0.14)
+    $faceSize = [int]($sh * 0.12)
     $lFace          = New-Object System.Windows.Forms.Label
-    $lFace.Text     = ":("
-    $lFace.Font     = New-Object System.Drawing.Font("Segoe UI Light", ([int]($sh * 0.13)), [System.Drawing.FontStyle]::Regular)
-    $lFace.ForeColor= [System.Drawing.Color]::White
-    $lFace.AutoSize = $true
-    $lFace.Location = New-Object System.Drawing.Point($ml, $mt)
+    $lFace.Text      = ":("
+    $lFace.Font      = New-Object System.Drawing.Font("Segoe UI Light", $faceSize, [System.Drawing.FontStyle]::Regular)
+    $lFace.ForeColor = [System.Drawing.Color]::White
+    $lFace.AutoSize  = $true
+    $lFace.Location  = New-Object System.Drawing.Point($ml, $faceTop)
     $form.Controls.Add($lFace)
 
-    $msgTop      = $mt + [int]($sh * 0.25)
-    $msgFs       = [math]::Max(10, [int]($sh * 0.024))
-    $lMsg        = New-Object System.Windows.Forms.Label
-    $lMsg.Text   = "Your PC ran into a problem and needs to restart. We're just collecting some error info, and then we'll restart for you."
-    $lMsg.Font   = New-Object System.Drawing.Font("Segoe UI", $msgFs, [System.Drawing.FontStyle]::Regular)
+    $msgTop  = $faceTop + [int]($sh * 0.22)
+    $msgFs   = [int]($sh * 0.022)
+    $lMsg          = New-Object System.Windows.Forms.Label
+    $lMsg.Text      = "Your PC ran into a problem and needs to restart. We're just collecting some error info, and then we'll restart for you."
+    $lMsg.Font      = New-Object System.Drawing.Font("Segoe UI", $msgFs, [System.Drawing.FontStyle]::Regular)
     $lMsg.ForeColor = [System.Drawing.Color]::White
     $lMsg.AutoSize  = $false
-    $lMsg.Width     = [int]($sw * 0.55)
-    $lMsg.Height    = [int]($sh * 0.12)
+    $lMsg.Width     = [int]($sw * 0.52)
+    $lMsg.Height    = [int]($sh * 0.11)
     $lMsg.Location  = New-Object System.Drawing.Point($ml, $msgTop)
     $form.Controls.Add($lMsg)
 
-    $pctTop         = $msgTop + [int]($sh * 0.14)
-    $pctFs          = [math]::Max(10, [int]($sh * 0.024))
-    $lPct           = New-Object System.Windows.Forms.Label
+    $pctTop  = $msgTop + [int]($sh * 0.12)
+    $pctFs   = [int]($sh * 0.022)
+    $lPct          = New-Object System.Windows.Forms.Label
     $lPct.Text      = "0% complete"
     $lPct.Font      = New-Object System.Drawing.Font("Segoe UI", $pctFs, [System.Drawing.FontStyle]::Regular)
     $lPct.ForeColor = [System.Drawing.Color]::White
@@ -156,53 +154,53 @@ foreach ($screen in $screens) {
     $lPct.Location  = New-Object System.Drawing.Point($ml, $pctTop)
     $form.Controls.Add($lPct)
 
-    $qrTop    = $pctTop + [int]($sh * 0.11)
-    $pixSz    = [math]::Max(3, [int]($sh / 130))
-    $qrBmp    = New-QRBitmap $pixSz
-    $qrW      = $qrBmp.Width
-    $qrH      = $qrBmp.Height
+    $qrTargetSize = [int]($sh * 0.085)
+    $qrBmp        = New-QRBitmap $qrTargetSize
+    $qrActual     = $qrBmp.Width
+    $qrTop        = $pctTop + [int]($sh * 0.085)
 
     $qrBox          = New-Object System.Windows.Forms.PictureBox
     $qrBox.Location = New-Object System.Drawing.Point($ml, $qrTop)
-    $qrBox.Size     = New-Object System.Drawing.Size($qrW, $qrH)
+    $qrBox.Size     = New-Object System.Drawing.Size($qrActual, $qrActual)
     $qrBox.Image    = $qrBmp
     $qrBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Normal
     $qrBox.BackColor= [System.Drawing.Color]::White
     $form.Controls.Add($qrBox)
 
-    $infoX    = $ml + $qrW + [int]($sw * 0.018)
-    $infoFs   = [math]::Max(8, [int]($sh * 0.013))
+    $infoX    = $ml + $qrActual + [int]($sw * 0.015)
+    $infoFs   = [int]($sh * 0.012)
     $infoFont = New-Object System.Drawing.Font("Segoe UI", $infoFs, [System.Drawing.FontStyle]::Regular)
-    $infoW    = $sw - $infoX - [int]($sw * 0.05)
+    $infoW    = [int]($sw * 0.40)
+    $lineH    = [int]($sh * 0.038)
 
     $lI1          = New-Object System.Windows.Forms.Label
-    $lI1.Text     = "For more information about this issue and possible fixes, visit https://www.windows.com/stopcode"
-    $lI1.Font     = $infoFont
-    $lI1.ForeColor= [System.Drawing.Color]::White
-    $lI1.AutoSize = $false
-    $lI1.Width    = $infoW
-    $lI1.Height   = [int]($sh * 0.07)
-    $lI1.Location = New-Object System.Drawing.Point($infoX, $qrTop)
+    $lI1.Text      = "For more information about this issue and possible fixes, visit https://www.windows.com/stopcode"
+    $lI1.Font      = $infoFont
+    $lI1.ForeColor = [System.Drawing.Color]::White
+    $lI1.AutoSize  = $false
+    $lI1.Width     = $infoW
+    $lI1.Height    = $lineH * 2
+    $lI1.Location  = New-Object System.Drawing.Point($infoX, $qrTop)
     $form.Controls.Add($lI1)
 
     $lI2          = New-Object System.Windows.Forms.Label
-    $lI2.Text     = "If you call a support person, give them this info:"
-    $lI2.Font     = $infoFont
-    $lI2.ForeColor= [System.Drawing.Color]::White
-    $lI2.AutoSize = $false
-    $lI2.Width    = $infoW
-    $lI2.Height   = [int]($sh * 0.04)
-    $lI2.Location = New-Object System.Drawing.Point($infoX, ($qrTop + [int]($sh * 0.068)))
+    $lI2.Text      = "If you call a support person, give them this info:"
+    $lI2.Font      = $infoFont
+    $lI2.ForeColor = [System.Drawing.Color]::White
+    $lI2.AutoSize  = $false
+    $lI2.Width     = $infoW
+    $lI2.Height    = $lineH
+    $lI2.Location  = New-Object System.Drawing.Point($infoX, ($qrTop + $lineH * 2 + 4))
     $form.Controls.Add($lI2)
 
     $lI3          = New-Object System.Windows.Forms.Label
-    $lI3.Text     = "Stop code: CRITICAL_PROCESS_DIED"
-    $lI3.Font     = $infoFont
-    $lI3.ForeColor= [System.Drawing.Color]::White
-    $lI3.AutoSize = $false
-    $lI3.Width    = $infoW
-    $lI3.Height   = [int]($sh * 0.04)
-    $lI3.Location = New-Object System.Drawing.Point($infoX, ($qrTop + [int]($sh * 0.098)))
+    $lI3.Text      = "Stop code: CRITICAL_PROCESS_DIED"
+    $lI3.Font      = $infoFont
+    $lI3.ForeColor = [System.Drawing.Color]::White
+    $lI3.AutoSize  = $false
+    $lI3.Width     = $infoW
+    $lI3.Height    = $lineH
+    $lI3.Location  = New-Object System.Drawing.Point($infoX, ($qrTop + $lineH * 3 + 4))
     $form.Controls.Add($lI3)
 
     $forms += [PSCustomObject]@{ Form = $form; LabelPct = $lPct }
