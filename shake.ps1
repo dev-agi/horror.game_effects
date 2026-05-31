@@ -7,32 +7,28 @@ if ($app -eq "mouse") {
     $code = @'
 using System;
 using System.Runtime.InteropServices;
-public class MouseShake {
+public class M {
     [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")]
-    public static extern bool GetCursorPos(out POINT lpPoint);
-    public struct POINT { public int X; public int Y; }
+    public static extern bool GetCursorPos(out P p);
+    public struct P { public int X, Y; }
 }
 '@
-    try {
-        Add-Type -TypeDefinition $code -ErrorAction Stop
-    } catch {
-        exit
-    }
-    $point = New-Object MouseShake+POINT
-    [MouseShake]::GetCursorPos([ref]$point)
-    $origX = $point.X
-    $origY = $point.Y
+    Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
+    $point = New-Object M+P
+    [M]::GetCursorPos([ref]$point)
+    $originX = $point.X
+    $originY = $point.Y
     $end = (Get-Date).AddSeconds($time)
     $rng = New-Object System.Random
     while ((Get-Date) -lt $end) {
-        $dx = $rng.Next(-$power, $power+1)
-        $dy = $rng.Next(-$power, $power+1)
-        [MouseShake]::SetCursorPos($origX + $dx, $origY + $dy)
+        $dx = $rng.Next(-$power, $power + 1)
+        $dy = $rng.Next(-$power, $power + 1)
+        [M]::SetCursorPos($originX + $dx, $originY + $dy)
         Start-Sleep -Milliseconds 15
     }
-    [MouseShake]::SetCursorPos($origX, $origY)
+    [M]::SetCursorPos($originX, $originY)
 } else {
     $proc = Get-Process -Name $app -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $proc) { exit }
