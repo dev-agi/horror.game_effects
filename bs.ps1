@@ -78,11 +78,11 @@ $qrMatrix = @(
     "1111111001011011111110"
 )
 
-function New-QRBitmap($targetSize) {
+function New-QRBitmap($targetPx) {
     $rows  = $qrMatrix.Count
     $cols  = $qrMatrix[0].Length
     $quiet = 3
-    $cs    = [math]::Max(2, [math]::Floor($targetSize / ($cols + $quiet * 2)))
+    $cs    = [math]::Max(3, [math]::Floor($targetPx / ($cols + $quiet * 2)))
     $total = ($cols + $quiet * 2) * $cs
 
     $bmp = New-Object System.Drawing.Bitmap($total, $total)
@@ -93,13 +93,11 @@ function New-QRBitmap($targetSize) {
     for ($r = 0; $r -lt $rows; $r++) {
         for ($c = 0; $c -lt $cols; $c++) {
             if ($qrMatrix[$r][$c] -eq '1') {
-                $g.FillRectangle($blk, ($c + $quiet) * $cs, ($r + $quiet) * $cs, $cs, $cs)
+                $g.FillRectangle($blk, ($c+$quiet)*$cs, ($r+$quiet)*$cs, $cs, $cs)
             }
         }
     }
-
-    $blk.Dispose()
-    $g.Dispose()
+    $blk.Dispose(); $g.Dispose()
     return $bmp
 }
 
@@ -122,31 +120,31 @@ foreach ($screen in $screens) {
 
     $ml = [int]($sw * 0.10)
 
-    $faceTop  = [int]($sh * 0.14)
-    $faceSize = [int]($sh * 0.12)
-    $lFace          = New-Object System.Windows.Forms.Label
+    $faceTop = [int]($sh * 0.15)
+    $faceFs  = [int]($sh * 0.115)
+    $lFace   = New-Object System.Windows.Forms.Label
     $lFace.Text      = ":("
-    $lFace.Font      = New-Object System.Drawing.Font("Segoe UI Light", $faceSize, [System.Drawing.FontStyle]::Regular)
+    $lFace.Font      = New-Object System.Drawing.Font("Segoe UI Light", $faceFs, [System.Drawing.FontStyle]::Regular)
     $lFace.ForeColor = [System.Drawing.Color]::White
     $lFace.AutoSize  = $true
     $lFace.Location  = New-Object System.Drawing.Point($ml, $faceTop)
     $form.Controls.Add($lFace)
 
-    $msgTop  = $faceTop + [int]($sh * 0.22)
-    $msgFs   = [int]($sh * 0.022)
-    $lMsg          = New-Object System.Windows.Forms.Label
+    $msgTop = $faceTop + [int]($sh * 0.235)
+    $msgFs  = [int]($sh * 0.026)
+    $lMsg   = New-Object System.Windows.Forms.Label
     $lMsg.Text      = "Your PC ran into a problem and needs to restart. We're just collecting some error info, and then we'll restart for you."
     $lMsg.Font      = New-Object System.Drawing.Font("Segoe UI", $msgFs, [System.Drawing.FontStyle]::Regular)
     $lMsg.ForeColor = [System.Drawing.Color]::White
     $lMsg.AutoSize  = $false
-    $lMsg.Width     = [int]($sw * 0.52)
-    $lMsg.Height    = [int]($sh * 0.11)
+    $lMsg.Width     = [int]($sw * 0.50)
+    $lMsg.Height    = [int]($sh * 0.13)
     $lMsg.Location  = New-Object System.Drawing.Point($ml, $msgTop)
     $form.Controls.Add($lMsg)
 
-    $pctTop  = $msgTop + [int]($sh * 0.12)
-    $pctFs   = [int]($sh * 0.022)
-    $lPct          = New-Object System.Windows.Forms.Label
+    $pctTop = $msgTop + [int]($sh * 0.135)
+    $pctFs  = [int]($sh * 0.026)
+    $lPct   = New-Object System.Windows.Forms.Label
     $lPct.Text      = "0% complete"
     $lPct.Font      = New-Object System.Drawing.Font("Segoe UI", $pctFs, [System.Drawing.FontStyle]::Regular)
     $lPct.ForeColor = [System.Drawing.Color]::White
@@ -154,53 +152,53 @@ foreach ($screen in $screens) {
     $lPct.Location  = New-Object System.Drawing.Point($ml, $pctTop)
     $form.Controls.Add($lPct)
 
-    $qrTargetSize = [int]($sh * 0.085)
-    $qrBmp        = New-QRBitmap $qrTargetSize
-    $qrActual     = $qrBmp.Width
-    $qrTop        = $pctTop + [int]($sh * 0.085)
+    $qrTargetPx = [int]($sh * 0.13)
+    $qrBmp      = New-QRBitmap $qrTargetPx
+    $qrSide     = $qrBmp.Width
+    $qrTop      = $pctTop + [int]($sh * 0.09)
 
-    $qrBox          = New-Object System.Windows.Forms.PictureBox
+    $qrBox = New-Object System.Windows.Forms.PictureBox
     $qrBox.Location = New-Object System.Drawing.Point($ml, $qrTop)
-    $qrBox.Size     = New-Object System.Drawing.Size($qrActual, $qrActual)
+    $qrBox.Size     = New-Object System.Drawing.Size($qrSide, $qrSide)
     $qrBox.Image    = $qrBmp
     $qrBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Normal
     $qrBox.BackColor= [System.Drawing.Color]::White
     $form.Controls.Add($qrBox)
 
-    $infoX    = $ml + $qrActual + [int]($sw * 0.015)
-    $infoFs   = [int]($sh * 0.012)
-    $infoFont = New-Object System.Drawing.Font("Segoe UI", $infoFs, [System.Drawing.FontStyle]::Regular)
-    $infoW    = [int]($sw * 0.40)
-    $lineH    = [int]($sh * 0.038)
+    $infoX   = $ml + $qrSide + [int]($sw * 0.016)
+    $infoFs  = [int]($sh * 0.0135)
+    $infoFont= New-Object System.Drawing.Font("Segoe UI", $infoFs, [System.Drawing.FontStyle]::Regular)
+    $infoW   = [int]($sw * 0.38)
+    $infoLH  = [int]($sh * 0.042)
 
-    $lI1          = New-Object System.Windows.Forms.Label
+    $lI1 = New-Object System.Windows.Forms.Label
     $lI1.Text      = "For more information about this issue and possible fixes, visit https://www.windows.com/stopcode"
     $lI1.Font      = $infoFont
     $lI1.ForeColor = [System.Drawing.Color]::White
     $lI1.AutoSize  = $false
     $lI1.Width     = $infoW
-    $lI1.Height    = $lineH * 2
+    $lI1.Height    = [int]($infoLH * 1.8)
     $lI1.Location  = New-Object System.Drawing.Point($infoX, $qrTop)
     $form.Controls.Add($lI1)
 
-    $lI2          = New-Object System.Windows.Forms.Label
+    $lI2 = New-Object System.Windows.Forms.Label
     $lI2.Text      = "If you call a support person, give them this info:"
     $lI2.Font      = $infoFont
     $lI2.ForeColor = [System.Drawing.Color]::White
     $lI2.AutoSize  = $false
     $lI2.Width     = $infoW
-    $lI2.Height    = $lineH
-    $lI2.Location  = New-Object System.Drawing.Point($infoX, ($qrTop + $lineH * 2 + 4))
+    $lI2.Height    = $infoLH
+    $lI2.Location  = New-Object System.Drawing.Point($infoX, ($qrTop + [int]($infoLH * 2.0)))
     $form.Controls.Add($lI2)
 
-    $lI3          = New-Object System.Windows.Forms.Label
+    $lI3 = New-Object System.Windows.Forms.Label
     $lI3.Text      = "Stop code: CRITICAL_PROCESS_DIED"
     $lI3.Font      = $infoFont
     $lI3.ForeColor = [System.Drawing.Color]::White
     $lI3.AutoSize  = $false
     $lI3.Width     = $infoW
-    $lI3.Height    = $lineH
-    $lI3.Location  = New-Object System.Drawing.Point($infoX, ($qrTop + $lineH * 3 + 4))
+    $lI3.Height    = $infoLH
+    $lI3.Location  = New-Object System.Drawing.Point($infoX, ($qrTop + [int]($infoLH * 3.1)))
     $form.Controls.Add($lI3)
 
     $forms += [PSCustomObject]@{ Form = $form; LabelPct = $lPct }
