@@ -57,15 +57,15 @@ for ($i = 0; $i -lt $cmdCount; $i++) {
     $currentScenario = $scenarios[$scenarioIndex]
     $currentTitle = $titles[$scenarioIndex]
     
-    # Komutları aralarına milisaniyelik gecikmeler koyarak tek bir satır haline getiriyoruz
+    # Komut dizisini milisaniyelik gecikmelerle birleştiriyoruz
     $scriptCommands = $currentScenario -join " ; Start-Sleep -Milliseconds $(Get-Random -Min 150 -Max 400); "
     
-    # PowerShell'in arka plan rengini siyah yapıp terminali temizleyen, ardından komutları çalıştıran temiz string
-    $finalCommand = "[console]::BackgroundColor = 'Black'; Clear-Host; title $($currentTitle)_$i; $scriptCommands; Start-Sleep -Seconds 3; exit"
+    # Yerel PowerShell başlık atama yöntemi: $host.UI.RawUI.WindowTitle kullanıldı
+    $finalCommand = "[console]::BackgroundColor = 'Black'; Clear-Host; `$host.UI.RawUI.WindowTitle = '$($currentTitle)_$i'; $scriptCommands; Start-Sleep -Seconds 3; exit"
 
-    # HATA VERME İHTİMALİ SIFIR: Doğrudan argüman listesiyle alt süreçleri başlatıyoruz
+    # Süreci temiz bir şekilde argümanlarla fırlatıyoruz
     Start-Process -FilePath "powershell.exe" -ArgumentList "-NoExit", "-Command", $finalCommand
     
-    # Pencerelerin patlama efekti gecikmesi
+    # Pencerelerin ardışık patlama efekti gecikmesi
     Start-Sleep -Milliseconds (Get-Random -Min 300 -Max 600)
 }
