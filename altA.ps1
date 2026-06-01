@@ -22,6 +22,7 @@ if ($proc) {
         [Win32]::ShowWindow($h, 6)
         $v = 0
         [Win32]::DwmSetWindowAttribute($h, $a, [ref]$v, 4)
+        Start-Sleep -Milliseconds 100
         $response = @{
             connectionId = $p.connectionId
             status = "Success"
