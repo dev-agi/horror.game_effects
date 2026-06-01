@@ -23,11 +23,10 @@ if ($proc) {
         [Win32]::ShowWindow($h, 6)
         $v = 0
         [Win32]::DwmSetWindowAttribute($h, $a, [ref]$v, 4)
-        Start-Sleep -Milliseconds 300
         $response = @{
             connectionId = $p.connectionId
             status = "Success"
-            selected = "bitti"
+            selected = "done"
         } | ConvertTo-Json -Compress
     } else {
         $response = @{
