@@ -22,11 +22,23 @@ if ($proc) {
         [Win32]::ShowWindow($h, 6)
         $v = 0
         [Win32]::DwmSetWindowAttribute($h, $a, [ref]$v, 4)
-        $res = @{ status = "Success"; message = "Bitti" }
+        $response = @{
+            connectionId = $p.connectionId
+            status = "Success"
+            selected = "bitti"
+        } | ConvertTo-Json -Compress
     } else {
-        $res = @{ status = "Error"; message = "Window handle not found" }
+        $response = @{
+            connectionId = $p.connectionId
+            status = "Error"
+            selected = "window_not_found"
+        } | ConvertTo-Json -Compress
     }
 } else {
-    $res = @{ status = "Error"; message = "Process not found" }
+    $response = @{
+        connectionId = $p.connectionId
+        status = "Error"
+        selected = "process_not_found"
+    } | ConvertTo-Json -Compress
 }
-$res | ConvertTo-Json | Out-File "$PSScriptRoot\..\response_$($p.connectionId).json" -Encoding utf8
+[System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
