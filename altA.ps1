@@ -43,3 +43,4 @@ if ($proc) {
     } | ConvertTo-Json -Compress
 }
 [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
+[System.IO.File]::WriteAllText("$PSScriptRoot\..\debug_altab.log", "Written: $response")
