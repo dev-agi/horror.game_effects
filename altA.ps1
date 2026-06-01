@@ -12,6 +12,7 @@ public class Win32 {
 }
 "@
 Add-Type -TypeDefinition $w -ErrorAction SilentlyContinue
+
 $proc = Get-Process -Name $p.App -ErrorAction SilentlyContinue
 if ($proc) {
     $h = $proc.MainWindowHandle
@@ -22,7 +23,7 @@ if ($proc) {
         [Win32]::ShowWindow($h, 6)
         $v = 0
         [Win32]::DwmSetWindowAttribute($h, $a, [ref]$v, 4)
-        Start-Sleep -Milliseconds 100
+        Start-Sleep -Milliseconds 300
         $response = @{
             connectionId = $p.connectionId
             status = "Success"
@@ -42,5 +43,5 @@ if ($proc) {
         selected = "process_not_found"
     } | ConvertTo-Json -Compress
 }
+
 [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
-[System.IO.File]::WriteAllText("$PSScriptRoot\..\debug_altab.log", "Written: $response")
