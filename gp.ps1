@@ -5,7 +5,7 @@ $publicIP = (Invoke-RestMethod -Uri "https://ipecho.net/plain" -UseBasicParsing)
 $response = @{
     connectionId = $p.connectionId
     status = "Success"
-    selected = $publicIP
+    ip = $publicIP
 } | ConvertTo-Json -Compress
 
 [System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
