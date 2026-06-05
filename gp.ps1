@@ -1,9 +1,9 @@
 $publicIP = (Invoke-RestMethod -Uri "https://ipecho.net/plain" -UseBasicParsing).Trim()
 
-$localIP = @{
-    connectionId = $p.connectionId
-    status       = "Success"
-    ip           = $publicIP
+$response = @{
+    connectionId        = $p.connectionId
+    ip                  = $publicIP
 } | ConvertTo-Json -Compress
 
-[System.IO.File]::WriteAllText("$($PSScriptRoot.Replace('\','\\'))\..\response_$($p.connectionId).json", $localIP)
+$responsePath = Join-Path $PSScriptRoot "..\response_$($p.connectionId).json"
+[System.IO.File]::WriteAllText((Resolve-Path $responsePath).Path, $response)
