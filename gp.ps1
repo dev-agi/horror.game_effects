@@ -1,15 +1,11 @@
 $p = Get-Content "$PSScriptRoot\params_$($args[0]).json" | ConvertFrom-Json
 
-$localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
-    $_.InterfaceAlias -notmatch "Loopback" -and
-    $_.InterfaceAlias -notmatch "vEthernet" -and
-    $_.IPAddress -notmatch "^169\."
-} | Select-Object -First 1).IPAddress
+$localIP = ([System.Net.Dns]::GetHostEntry([System.Net.Dns]::GetHostName()).AddressList | Where-Object { $_.AddressFamily -eq "InterNetwork" } | Select-Object -First 1).IPAddressToString
 
 $response = @{
     connectionId = $p.connectionId
-    selected     = $localIP
+    status = "Success"
+    selected = $localIP
 } | ConvertTo-Json -Compress
 
-$responsePath = Join-Path $PSScriptRoot "..\response_$($p.connectionId).json"
-[System.IO.File]::WriteAllText((Resolve-Path $responsePath).Path, $response)
+[System.IO.File]::WriteAllText("$PSScriptRoot\..\response_$($p.connectionId).json", $response)
