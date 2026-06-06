@@ -12,62 +12,50 @@ try {
     }
 
     [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
 
-    $xml = New-Object System.Text.StringBuilder
-    [void]$xml.Append("<toast><visual><binding template='ToastGeneric'>")
-    [void]$xml.Append("<text>$($p.title)</text>")
-    [void]$xml.Append("<text>$($p.text)</text>")
+    $notify = New-Object System.Windows.Forms.NotifyIcon
+    $notify.Icon = [System.Drawing.SystemIcons]::Application
+    $notify.Visible = $true
+
     if (Test-Path $logoPath) {
-        [void]$xml.Append("<image placement='appLogoOverride' src='$logoPath'/>")
-    }
-    [void]$xml.Append("</binding></visual></toast>")
-
-    $xmlDoc = New-Object -ComObject Microsoft.XMLDOM
-    [void]$xmlDoc.loadXML($xml.ToString())
-
-    $wscript = New-Object -ComObject WScript.Shell
-    $regPath = "HKCU\SOFTWARE\Classes\AppId\PowershellNotification"
-    $wscript.RegWrite("$regPath\", "PowershellNotification", "REG_SZ")
-    $wscript.RegWrite("$regPath\ShowInActionCenter", 1, "REG_DWORD")
-
-    $asTask = [PowerShell]::Create().AddScript({
-        param($xmlString, $time, $connectionId, $pRoot)
         try {
-            [void][System.Reflection.Assembly]::LoadWithPartialName("System.Runtime.InteropServices.WindowsRuntime")
-            
-            $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
-            $xmlDoc.LoadXml($xmlString)
-            
-            $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
-            $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("PowershellNotification")
-            
-            $clicked = $false
-            $timer = [System.Diagnostics.Stopwatch]::StartNew()
-            
-            $activated = Register-ObjectEvent -InputObject $toast -EventName "Activated" -Action { $global:clicked = $true }
-            
-            $notifier.Show($toast)
-            
-            while ($timer.Elapsed.TotalSeconds -lt $time -and -not $global:clicked) {
-                Start-Sleep -Milliseconds 50
-            }
-            
-            if ($global:clicked) {
-                @{ connectionId = $connectionId; answer = "clicked" } | ConvertTo-Json -Compress | Set-Content "$pRoot\..\response_$($connectionId).json" -Encoding UTF8
-            }
-            
-            Unregister-Event -SourceIdentifier $activated.Name -ErrorAction SilentlyContinue
+            $bmp = New-Object System.Drawing.Bitmap($logoPath)
+            $hIcon = $bmp.GetHicon()
+            $notify.Icon = [System.Drawing.Icon]::FromHandle($hIcon)
+            $bmp.Dispose()
         } catch {}
-    }).AddArgument($xml.ToString()).AddArgument($p.time).AddArgument($p.connectionId).AddArgument($PSScriptRoot)
-    
-    $job = $asTask.BeginInvoke()
-    
-    $mainTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    while (-not $job.IsCompleted -and $mainTimer.Elapsed.TotalSeconds -lt ($p.time + 2)) {
-        Start-Sleep -Milliseconds 100
     }
 
-    $asTask.Dispose()
+    $appName = $p.title
+    $text = $p.text
+    $notify.Text = $appName
+
+    $notify.ShowBalloonTip(($p.time * 1000), $appName, $text, [System.Windows.Forms.ToolTipIcon]::None)
+
+    $clicked = $false
+    $startTime = Get-Date
+
+    $clickedEvent = Register-ObjectEvent -InputObject $notify -EventName "BalloonTipClicked" -Action {
+        $global:clicked = $true
+    }
+
+    while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 50
+    }
+
+    if ($global:clicked) {
+        $responsePath = "$PSScriptRoot\..\response_$($p.connectionId).json"
+        @{
+            connectionId = $p.connectionId
+            answer = "clicked"
+        } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
+    }
+
+    Unregister-Event -SourceIdentifier $clickedEvent.Name -ErrorAction SilentlyContinue
+    $notify.Visible = $false
+    $notify.Dispose()
     if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
 } catch {
     exit
