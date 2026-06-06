@@ -2,37 +2,29 @@ $uid = $args[0]
 $p = Get-Content "$PSScriptRoot\params_$uid.json" | ConvertFrom-Json
 
 $fullMsg = $p.msg
-$typeSpeed = if ($p.PSObject.Properties["typespeed"]) { $p.typespeed } else { 0 }
-$closeTime = if ($p.PSObject.Properties["closeTime"]) { $p.closeTime } else { 3 }
+$typeTime = if ($p.PSObject.Properties["typeTime"]) { [double]$p.typeTime } else { 0 }
+$closeTime = if ($p.PSObject.Properties["closeTime"]) { [double]$p.closeTime } else { 3 }
 $useNotepad = if ($p.PSObject.Properties["notepad"]) { $p.notepad } else { $false }
 
 Add-Type -AssemblyName System.Windows.Forms
 
 if ($useNotepad) {
-    $notepadProc = Start-Process notepad -PassThru
-    Start-Sleep -Milliseconds 800
+    $safeTitle = ($p.title + "_" + $p.connectionId) -replace '[\\/:*?"<>|]', '_'
+    $filePath = "$PSScriptRoot\..\notepad_$safeTitle.txt"
 
-    Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class NotepadHelper {
-    [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string title);
-    [DllImport("user32.dll")] public static extern int SendMessage(IntPtr hWnd, int msg, int wParam, string lParam);
-}
-"@
-
-    $notepadHwnd = $notepadProc.MainWindowHandle
-    $editHwnd = [NotepadHelper]::FindWindowEx($notepadHwnd, [IntPtr]::Zero, "Edit", $null)
-    if ($editHwnd -eq [IntPtr]::Zero) {
-        $editHwnd = [NotepadHelper]::FindWindowEx($notepadHwnd, [IntPtr]::Zero, "Scintilla", $null)
+    $intervalMs = 0
+    if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
+        $intervalMs = [int](($typeTime * 1000) / $fullMsg.Length)
     }
 
     $typed = ""
     foreach ($ch in $fullMsg.ToCharArray()) {
         $typed += $ch
-        [NotepadHelper]::SendMessage($editHwnd, 0x000C, 0, $typed) | Out-Null
-        if ($typeSpeed -gt 0) { Start-Sleep -Milliseconds $typeSpeed }
+        [System.IO.File]::WriteAllText($filePath, $typed, [System.Text.Encoding]::UTF8)
+        if ($intervalMs -gt 0) { Start-Sleep -Milliseconds $intervalMs }
     }
+
+    $notepadProc = Start-Process notepad $filePath -PassThru
 
     if ($closeTime -ge 0) {
         Start-Sleep -Seconds $closeTime
@@ -55,9 +47,16 @@ public class NotepadHelper {
     $form.Controls.Add($label)
 
     $charIndex = 0
+    $totalChars = $fullMsg.Length
+
+    $intervalMs = 1
+    if ($typeTime -gt 0 -and $totalChars -gt 0) {
+        $intervalMs = [int](($typeTime * 1000) / $totalChars)
+        if ($intervalMs -lt 1) { $intervalMs = 1 }
+    }
 
     $typeTimer = New-Object System.Windows.Forms.Timer
-    $typeTimer.Interval = if ($typeSpeed -le 0) { 1 } else { $typeSpeed }
+    $typeTimer.Interval = $intervalMs
     $typeTimer.Add_Tick({
         if ($script:charIndex -lt $fullMsg.Length) {
             $label.Text += $fullMsg[$script:charIndex].ToString()
@@ -66,7 +65,7 @@ public class NotepadHelper {
             $typeTimer.Stop()
             if ($closeTime -ge 0) {
                 $closeTimer = New-Object System.Windows.Forms.Timer
-                $closeTimer.Interval = $closeTime * 1000
+                $closeTimer.Interval = [int]($closeTime * 1000)
                 $closeTimer.Add_Tick({ $form.Close() })
                 $closeTimer.Start()
             }
