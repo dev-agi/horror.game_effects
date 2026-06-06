@@ -12,23 +12,26 @@ if ($useNotepad) {
     $safeTitle = ($p.title + "_" + $p.connectionId) -replace '[\\/:*?"<>|]', '_'
     $filePath = "$PSScriptRoot\..\notepad_$safeTitle.txt"
 
-    [System.IO.File]::WriteAllText($filePath, "", [System.Text.Encoding]::UTF8)
-    $notepadProc = Start-Process notepad $filePath -PassThru
-    Start-Sleep -Milliseconds 800
+    $intervalMs = 0
+    if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
+        $intervalMs = [int](($typeTime * 1000.0) / $fullMsg.Length)
+        if ($intervalMs -lt 1) { $intervalMs = 1 }
+    }
 
     $typed = ""
     foreach ($ch in $fullMsg.ToCharArray()) {
         $typed += $ch
-        [System.IO.File]::WriteAllText($filePath, $typed, [System.Text.Encoding]::UTF8)
-
-        if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
-            $waitMs = [int](($typeTime * 1000.0) / $fullMsg.Length)
-            if ($waitMs -gt 0) { Start-Sleep -Milliseconds $waitMs }
-        }
+        if ($intervalMs -gt 0) { Start-Sleep -Milliseconds $intervalMs }
     }
+
+    [System.IO.File]::WriteAllText($filePath, $typed, [System.Text.Encoding]::UTF8)
+
+    $notepadProc = Start-Process notepad $filePath -PassThru
 
     if ($closeTime -ge 0) {
         Start-Sleep -Seconds $closeTime
+    } else {
+        $notepadProc.WaitForExit()
     }
 
     $notepadProc.CloseMainWindow() | Out-Null
