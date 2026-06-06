@@ -1,88 +1,58 @@
 $uid = $args[0]
-if ($uid) {
-    try {
-        $p = Get-Content "$PSScriptRoot\params_$uid.json" -Raw | ConvertFrom-Json
-        
-        $null = [Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
-        $null = [Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+if (-not $uid) { exit }
 
-        $logoPath = "$env:TEMP\logo_$uid.png"
-        if ($p.logo) {
-            try {
-                $wc = New-Object System.Net.WebClient
-                $wc.DownloadFile($p.logo, $logoPath)
-            } catch {
-                $logoPath = $null
-            }
-        } else {
-            $logoPath = $null
-        }
+try {
+    $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
+    if (-not $p) { exit }
 
-        $form = New-Object System.Windows.Forms.Form
-        $form.Text = $p.title
-        $form.Size = New-Object System.Drawing.Size(320, 100)
-        $form.StartPosition = "Manual"
-        $form.FormBorderStyle = "None"
-        $form.ShowInTaskbar = $false
-        $form.TopMost = $true
-        $form.BackColor = New-Object System.Drawing.Color::FromArgb(20, 20, 20)
+    $logoPath = "$env:TEMP\logo_$uid.png"
+    if ($p.logo) {
+        $wclient = New-Object System.Net.WebClient
+        $wclient.DownloadFile($p.logo, $logoPath)
+    }
 
-        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-        $form.Location = New-Object System.Drawing.Point(($screen.Width - 330), ($screen.Height - 110))
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
 
-        if ($logoPath -and (Test-Path $logoPath)) {
-            $pb = New-Object System.Windows.Forms.PictureBox
-            $pb.Image = [System.Drawing.Image]::FromFile($logoPath)
-            $pb.Size = New-Object System.Drawing.Size(60, 60)
-            $pb.Location = New-Object System.Drawing.Point(15, 20)
-            $pb.SizeMode = "Zoom"
-            $form.Controls.Add($pb)
-        }
+    $notify = New-Object System.Windows.Forms.NotifyIcon
+    $notify.Icon = [System.Drawing.SystemIcons]::Application
+    $notify.Visible = $true
 
-        $lblTitle = New-Object System.Windows.Forms.Label
-        $lblTitle.Text = $p.title
-        $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-        $lblTitle.ForeColor = New-Object System.Drawing.Color::White
-        $lblTitle.Location = New-Object System.Drawing.Point(85, 15)
-        $lblTitle.Size = New-Object System.Drawing.Size(220, 25)
-        $form.Controls.Add($lblTitle)
+    if (Test-Path $logoPath) {
+        try {
+            $bmp = New-Object System.Drawing.Bitmap($logoPath)
+            $hIcon = $bmp.GetHicon()
+            $notify.Icon = [System.Drawing.Icon]::FromHandle($hIcon)
+        } catch {}
+    }
 
-        $lblText = New-Object System.Windows.Forms.Label
-        $lblText.Text = $p.text
-        $lblText.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblText.ForeColor = New-Object System.Drawing.Color::FromArgb(180, 180, 180)
-        $lblText.Location = New-Object System.Drawing.Point(85, 40)
-        $lblText.Size = New-Object System.Drawing.Size(220, 45)
-        $form.Controls.Add($lblText)
+    $notify.BalloonTipTitle = $p.title
+    $notify.BalloonTipText = $p.text
+    $notify.ShowBalloonTip(($p.time * 1000))
 
-        $clicked = $false
+    $clicked = $false
+    $startTime = Get-Date
 
-        $clickEvent = {
-            $script:clicked = $true
-            $form.Close()
-        }
+    $clickedEvent = Register-ObjectEvent -InputObject $notify -EventName "BalloonTipClicked" -Action {
+        $global:clicked = $true
+    }
 
-        $form.Add_Click($clickEvent)
-        $lblTitle.Add_Click($clickEvent)
-        $lblText.Add_Click($clickEvent)
-        if (isset pb) { $pb.Add_Click($clickEvent) }
+    while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 10
+    }
 
-        $timer = New-Object System.Windows.Forms.Timer
-        $timer.Interval = [int]$p.time * 1000
-        $timer.Add_Tick({ $form.Close() })
-        $timer.Start()
+    if ($global:clicked) {
+        $responsePath = "$PSScriptRoot\..\response_$($p.connectionId).json"
+        @{
+            connectionId = $p.connectionId
+            answer = "clicked"
+        } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
+    }
 
-        $form.ShowDialog()
-
-        if ($clicked) {
-            @{
-                connectionId = $p.connectionId
-                answer = "clicked"
-            } | ConvertTo-Json -Compress | Set-Content "$PSScriptRoot\..\response_$($p.connectionId).json" -Encoding UTF8
-        }
-
-        if ($logoPath -and (Test-Path $logoPath)) {
-            Remove-Item $logoPath -Force
-        }
-    } catch {}
+    Unregister-Event -SourceIdentifier $clickedEvent.Name -ErrorAction SilentlyContinue
+    $notify.Dispose()
+    if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
+} catch {
+    exit
 }
