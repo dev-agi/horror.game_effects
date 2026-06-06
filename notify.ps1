@@ -5,56 +5,53 @@ try {
     $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
     if (-not $p) { exit }
 
-    $logoPath = "$env:TEMP\logo_$uid.png"
+    $logoPath = "$env:TEMP\logo_$uid.ico"
     if ($p.logo) {
         $wclient = New-Object System.Net.WebClient
-        $wclient.DownloadFile($p.logo, $logoPath)
+        $wclient.DownloadFile($p.logo, "$env:TEMP\temp_$uid.png")
+        if (Test-Path "$env:TEMP\temp_$uid.png") {
+            $bmp = New-Object System.Drawing.Bitmap("$env:TEMP\temp_$uid.png")
+            $iconHandle = $bmp.GetHicon()
+            $icon = [System.Drawing.Icon]::FromHandle($iconHandle)
+            $fs = New-Object System.IO.FileStream($logoPath, [System.IO.FileMode]::Create)
+            $icon.Save($fs)
+            $fs.Close()
+            $icon.Dispose()
+            $bmp.Dispose()
+            Remove-Item "$env:TEMP\temp_$uid.png" -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    $appId = $p.title
-    $regPath = "HKCU:\Software\Classes\AppId\$appId"
-    if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
-        New-ItemProperty -Path $regPath -Name "DisplayName" -Value $appId -PropertyType String -Force | Out-Null
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+
+    $notify = New-Object System.Windows.Forms.NotifyIcon
+    $notify.Visible = $true
+
+    if (Test-Path $logoPath) {
+        try {
+            $notify.Icon = New-Object System.Drawing.Icon($logoPath)
+        } catch {
+            $notify.Icon = [System.Drawing.SystemIcons]::Application
+        }
+    } else {
+        $notify.Icon = [System.Drawing.SystemIcons]::Application
     }
 
-    $xml = @"
-<toast>
-    <visual>
-        <binding template="ToastGeneric">
-            <text>$($p.title)</text>
-            <text>$($p.text)</text>
-            $([string]::IsNullOrEmpty($p.logo) ? "" : "<image placement=`"appLogoOverride`" hint-crop=`"circle`" src=`"$logoPath`"/>")
-        </binding>
-    </visual>
-</toast>
-"@
-
-    $xmlDoc = New-Object -ComObject Microsoft.XMLDOM
-    $xmlDoc.loadXML($xml)
-
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Runtime.InteropServices.WindowsRuntime")
-    
-    $asType = [Type]::GetType("Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime")
-    $toastType = [Type]::GetType("Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType=WindowsRuntime")
-    $xmlType = [Type]::GetType("Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime")
-
-    $winXml = [Activator]::CreateInstance($xmlType)
-    $winXml.LoadXml($xml)
-
-    $toast = [Activator]::CreateInstance($toastType, $winXml)
+    $appName = $p.title
+    $text = $p.text
 
     $clicked = $false
     $startTime = Get-Date
 
-    $activatedEvent = Register-ObjectEvent -InputObject $toast -EventName "Activated" -Action {
+    $clickedEvent = Register-ObjectEvent -InputObject $notify -EventName "BalloonTipClicked" -Action {
         $global:clicked = $true
     }
 
-    $notifier = $asType::CreateToastNotifier($appId)
-    $notifier.Show($toast)
+    $notify.ShowBalloonTip(($p.time * 1000), $appName, $text, [System.Windows.Forms.ToolTipIcon]::None)
 
     while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
+        [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 50
     }
 
@@ -66,9 +63,10 @@ try {
         } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
     }
 
-    Unregister-Event -SourceIdentifier $activatedEvent.Name -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier $clickedEvent.Name -ErrorAction SilentlyContinue
+    $notify.Visible = $false
+    $notify.Dispose()
     if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
-    if (Test-Path $regPath) { Remove-Item -Path $regPath -Recurse -Force -ErrorAction SilentlyContinue }
 } catch {
     exit
 }
