@@ -11,6 +11,13 @@ try {
         $wclient.DownloadFile($p.logo, $logoPath)
     }
 
+    $appId = $p.title
+    $regPath = "HKCU:\Software\Classes\AppId\$appId"
+    if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+        New-ItemProperty -Path $regPath -Name "DisplayName" -Value $appId -PropertyType String -Force | Out-Null
+    }
+
     $xml = @"
 <toast>
     <visual>
@@ -23,18 +30,19 @@ try {
 </toast>
 "@
 
-    $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
-    $xmlDoc.LoadXml($xml)
+    $xmlDoc = New-Object -ComObject Microsoft.XMLDOM
+    $xmlDoc.loadXML($xml)
 
-    $appId = $p.title
-    $regPath = "HKCU:\Software\Classes\AppId\$appId"
-    if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
-        New-ItemProperty -Path $regPath -Name "DisplayName" -Value $appId -PropertyType String -Force | Out-Null
-    }
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Runtime.InteropServices.WindowsRuntime")
+    
+    $asType = [Type]::GetType("Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime")
+    $toastType = [Type]::GetType("Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType=WindowsRuntime")
+    $xmlType = [Type]::GetType("Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime")
 
-    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
-    $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
+    $winXml = [Activator]::CreateInstance($xmlType)
+    $winXml.LoadXml($xml)
+
+    $toast = [Activator]::CreateInstance($toastType, $winXml)
 
     $clicked = $false
     $startTime = Get-Date
@@ -43,7 +51,8 @@ try {
         $global:clicked = $true
     }
 
-    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+    $notifier = $asType::CreateToastNotifier($appId)
+    $notifier.Show($toast)
 
     while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
         Start-Sleep -Milliseconds 50
@@ -59,7 +68,7 @@ try {
 
     Unregister-Event -SourceIdentifier $activatedEvent.Name -ErrorAction SilentlyContinue
     if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
-    if (Test-Path $regPath) { Remove-Item -Path $regPath -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $regPath) { Remove-Item -Path $regPath -Recurse -Force -ErrorAction SilentlyContinue }
 } catch {
     exit
 }
