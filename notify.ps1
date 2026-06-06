@@ -5,68 +5,93 @@ try {
     $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
     if (-not $p) { exit }
 
-    $logoPath = "$env:TEMP\logo_$uid.ico"
-    if ($p.logo) {
-        $wclient = New-Object System.Net.WebClient
-        $wclient.DownloadFile($p.logo, "$env:TEMP\temp_$uid.png")
-        if (Test-Path "$env:TEMP\temp_$uid.png") {
-            $bmp = New-Object System.Drawing.Bitmap("$env:TEMP\temp_$uid.png")
-            $iconHandle = $bmp.GetHicon()
-            $icon = [System.Drawing.Icon]::FromHandle($iconHandle)
-            $fs = New-Object System.IO.FileStream($logoPath, [System.IO.FileMode]::Create)
-            $icon.Save($fs)
-            $fs.Close()
-            $icon.Dispose()
-            $bmp.Dispose()
-            Remove-Item "$env:TEMP\temp_$uid.png" -Force -ErrorAction SilentlyContinue
-        }
-    }
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
 
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+    $logoPath = "$env:TEMP\logo_$uid.ico"
+
+    try {
+        if ($p.logo) {
+            $tempPng = "$env:TEMP\temp_$uid.png"
+
+            $wc = New-Object System.Net.WebClient
+            $wc.DownloadFile($p.logo, $tempPng)
+            $wc.Dispose()
+
+            if (Test-Path $tempPng) {
+                $bmp = New-Object System.Drawing.Bitmap($tempPng)
+                $icon = [System.Drawing.Icon]::FromHandle($bmp.GetHicon())
+
+                $fs = [System.IO.File]::Create($logoPath)
+                $icon.Save($fs)
+                $fs.Close()
+
+                $bmp.Dispose()
+                $icon.Dispose()
+
+                Remove-Item $tempPng -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {}
 
     $notify = New-Object System.Windows.Forms.NotifyIcon
-    $notify.Visible = $true
 
-    if (Test-Path $logoPath) {
-        try {
+    try {
+        if (Test-Path $logoPath) {
             $notify.Icon = New-Object System.Drawing.Icon($logoPath)
-        } catch {
+        } else {
             $notify.Icon = [System.Drawing.SystemIcons]::Application
         }
-    } else {
+    } catch {
         $notify.Icon = [System.Drawing.SystemIcons]::Application
     }
 
-    $appName = $p.title
-    $text = $p.text
+    $notify.Visible = $true
 
-    $clicked = $false
-    $startTime = Get-Date
+    Start-Sleep -Milliseconds 750
 
-    $clickedEvent = Register-ObjectEvent -InputObject $notify -EventName "BalloonTipClicked" -Action {
+    $notify.BalloonTipTitle = [string]$p.title
+    $notify.BalloonTipText = [string]$p.text
+    $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
+
+    $global:clicked = $false
+
+    $event = Register-ObjectEvent -InputObject $notify -EventName BalloonTipClicked -Action {
         $global:clicked = $true
     }
 
-    $notify.ShowBalloonTip(($p.time * 1000), $appName, $text, [System.Windows.Forms.ToolTipIcon]::None)
+    $duration = [Math]::Max(1, [int]$p.time)
 
-    while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
+    $notify.ShowBalloonTip($duration * 1000)
+
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+
+    while ($sw.Elapsed.TotalSeconds -lt $duration) {
         [System.Windows.Forms.Application]::DoEvents()
+
+        if ($global:clicked) {
+            break
+        }
+
         Start-Sleep -Milliseconds 50
     }
 
-    if ($global:clicked) {
-        $responsePath = "$PSScriptRoot\..\response_$($p.connectionId).json"
+    if ($global:clicked -and $p.connectionId) {
         @{
             connectionId = $p.connectionId
             answer = "clicked"
-        } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
+        } | ConvertTo-Json -Compress | Set-Content "$PSScriptRoot\..\response_$($p.connectionId).json" -Encoding UTF8
     }
 
-    Unregister-Event -SourceIdentifier $clickedEvent.Name -ErrorAction SilentlyContinue
+    if ($event) {
+        Unregister-Event -SourceIdentifier $event.Name -ErrorAction SilentlyContinue
+    }
+
     $notify.Visible = $false
     $notify.Dispose()
-    if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
+
+    if (Test-Path $logoPath) {
+        Remove-Item $logoPath -Force -ErrorAction SilentlyContinue
+    }
 } catch {
-    exit
 }
