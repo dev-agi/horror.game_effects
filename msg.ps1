@@ -12,24 +12,28 @@ if ($useNotepad) {
     $safeTitle = ($p.title + "_" + $p.connectionId) -replace '[\\/:*?"<>|]', '_'
     $filePath = "$PSScriptRoot\..\notepad_$safeTitle.txt"
 
-    $intervalMs = 0
-    if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
-        $intervalMs = [int](($typeTime * 1000) / $fullMsg.Length)
-    }
+    [System.IO.File]::WriteAllText($filePath, "", [System.Text.Encoding]::UTF8)
+    $notepadProc = Start-Process notepad $filePath -PassThru
+    Start-Sleep -Milliseconds 800
 
     $typed = ""
     foreach ($ch in $fullMsg.ToCharArray()) {
         $typed += $ch
         [System.IO.File]::WriteAllText($filePath, $typed, [System.Text.Encoding]::UTF8)
-        if ($intervalMs -gt 0) { Start-Sleep -Milliseconds $intervalMs }
-    }
 
-    $notepadProc = Start-Process notepad $filePath -PassThru
+        if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
+            $waitMs = [int](($typeTime * 1000.0) / $fullMsg.Length)
+            if ($waitMs -gt 0) { Start-Sleep -Milliseconds $waitMs }
+        }
+    }
 
     if ($closeTime -ge 0) {
         Start-Sleep -Seconds $closeTime
-        $notepadProc.CloseMainWindow() | Out-Null
     }
+
+    $notepadProc.CloseMainWindow() | Out-Null
+    Start-Sleep -Milliseconds 500
+    Remove-Item $filePath -Force -ErrorAction SilentlyContinue
 
 } else {
     $form = New-Object System.Windows.Forms.Form
@@ -51,7 +55,7 @@ if ($useNotepad) {
 
     $intervalMs = 1
     if ($typeTime -gt 0 -and $totalChars -gt 0) {
-        $intervalMs = [int](($typeTime * 1000) / $totalChars)
+        $intervalMs = [int](($typeTime * 1000.0) / $totalChars)
         if ($intervalMs -lt 1) { $intervalMs = 1 }
     }
 
