@@ -11,37 +11,41 @@ try {
         $wclient.DownloadFile($p.logo, $logoPath)
     }
 
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+    $xml = @"
+<toast>
+    <visual>
+        <binding template="ToastGeneric">
+            <text>$($p.title)</text>
+            <text>$($p.text)</text>
+            $([string]::IsNullOrEmpty($p.logo) ? "" : "<image placement=`"appLogoOverride`" hint-crop=`"circle`" src=`"$logoPath`"/>")
+        </binding>
+    </visual>
+</toast>
+"@
 
-    $notify = New-Object System.Windows.Forms.NotifyIcon
-    $notify.Icon = [System.Drawing.SystemIcons]::Application
-    $notify.Visible = $true
+    $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
+    $xmlDoc.LoadXml($xml)
 
-    if (Test-Path $logoPath) {
-        try {
-            $bmp = New-Object System.Drawing.Bitmap($logoPath)
-            $hIcon = $bmp.GetHicon()
-            $notify.Icon = [System.Drawing.Icon]::FromHandle($hIcon)
-            $bmp.Dispose()
-        } catch {}
+    $appId = $p.title
+    $regPath = "HKCU:\Software\Classes\AppId\$appId"
+    if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+        New-ItemProperty -Path $regPath -Name "DisplayName" -Value $appId -PropertyType String -Force | Out-Null
     }
 
-    $appName = $p.title
-    $text = $p.text
-    $notify.Text = $appName
-
-    $notify.ShowBalloonTip(($p.time * 1000), $appName, $text, [System.Windows.Forms.ToolTipIcon]::None)
+    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
+    $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
 
     $clicked = $false
     $startTime = Get-Date
 
-    $clickedEvent = Register-ObjectEvent -InputObject $notify -EventName "BalloonTipClicked" -Action {
+    $activatedEvent = Register-ObjectEvent -InputObject $toast -EventName "Activated" -Action {
         $global:clicked = $true
     }
 
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+
     while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
-        [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 50
     }
 
@@ -53,10 +57,9 @@ try {
         } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
     }
 
-    Unregister-Event -SourceIdentifier $clickedEvent.Name -ErrorAction SilentlyContinue
-    $notify.Visible = $false
-    $notify.Dispose()
+    Unregister-Event -SourceIdentifier $activatedEvent.Name -ErrorAction SilentlyContinue
     if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $regPath) { Remove-Item -Path $regPath -Force -ErrorAction SilentlyContinue }
 } catch {
     exit
 }
