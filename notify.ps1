@@ -5,41 +5,53 @@ try {
     $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
     if (-not $p) { exit }
 
-    $logoPath = "$env:TEMP\logo_$uid.png"
+    $logoPath = "$env:TEMP\logo_$uid.ico"
     if ($p.logo) {
         $wclient = New-Object System.Net.WebClient
-        $wclient.DownloadFile($p.logo, $logoPath)
+        $wclient.DownloadFile($p.logo, "$env:TEMP\temp_$uid.png")
+        if (Test-Path "$env:TEMP\temp_$uid.png") {
+            $bmp = New-Object System.Drawing.Bitmap("$env:TEMP\temp_$uid.png")
+            $iconHandle = $bmp.GetHicon()
+            $icon = [System.Drawing.Icon]::FromHandle($iconHandle)
+            $fs = New-Object System.IO.FileStream($logoPath, [System.IO.FileMode]::Create)
+            $icon.Save($fs)
+            $fs.Close()
+            $icon.Dispose()
+            $bmp.Dispose()
+            Remove-Item "$env:TEMP\temp_$uid.png" -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
-    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+    $xml = @"
+<toast>
+    <visual>
+        <binding template="ToastGeneric">
+            <text>$($p.title)</text>
+            <text>$($p.text)</text>
+            $([string]::IsNullOrEmpty($p.logo) ? "" : "<image placement=`"appLogoOverride`" src=`"$logoPath`"/>")
+        </binding>
+    </visual>
+</toast>
+"@
 
-    $notify = New-Object System.Windows.Forms.NotifyIcon
-    $notify.Icon = [System.Drawing.SystemIcons]::Application
-    $notify.Visible = $true
+    $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
+    $xmlDoc.LoadXml($xml)
 
-    if (Test-Path $logoPath) {
-        try {
-            $bmp = New-Object System.Drawing.Bitmap($logoPath)
-            $hIcon = $bmp.GetHicon()
-            $notify.Icon = [System.Drawing.Icon]::FromHandle($hIcon)
-        } catch {}
-    }
-
-    $notify.BalloonTipTitle = $p.title
-    $notify.BalloonTipText = $p.text
-    $notify.ShowBalloonTip(($p.time * 1000))
+    $appId = "Windows.SystemToast.Background"
+    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
+    $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
 
     $clicked = $false
     $startTime = Get-Date
 
-    $clickedEvent = Register-ObjectEvent -InputObject $notify -EventName "BalloonTipClicked" -Action {
+    $activatedEvent = Register-ObjectEvent -InputObject $toast -EventName "Activated" -Action {
         $global:clicked = $true
     }
 
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+
     while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 10
+        Start-Sleep -Milliseconds 50
     }
 
     if ($global:clicked) {
@@ -50,8 +62,7 @@ try {
         } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
     }
 
-    Unregister-Event -SourceIdentifier $clickedEvent.Name -ErrorAction SilentlyContinue
-    $notify.Dispose()
+    Unregister-Event -SourceIdentifier $activatedEvent.Name -ErrorAction SilentlyContinue
     if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
 } catch {
     exit
