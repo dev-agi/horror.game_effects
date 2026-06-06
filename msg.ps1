@@ -9,8 +9,57 @@ $useNotepad = if ($p.PSObject.Properties["notepad"]) { $p.notepad } else { $fals
 Add-Type -AssemblyName System.Windows.Forms
 
 if ($useNotepad) {
-    $safeTitle = ($p.title + "_" + $p.connectionId) -replace '[\\/:*?"<>|]', '_'
-    $filePath = "$PSScriptRoot\..\notepad_$safeTitle.txt"
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class NotepadInjector {
+    [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string title);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int GetClassName(IntPtr hWnd, StringBuilder buf, int max);
+
+    public const uint EM_REPLACESEL = 0x00C2;
+    public const uint EM_SETSEL     = 0x00B1;
+
+    public static IntPtr FindEditControl(IntPtr notepadHwnd) {
+        string[] classNames = new string[] {
+            "RichEditD2DPT", "RichEdit20W", "Edit", "RICHEDIT50W", "RichEdit"
+        };
+        foreach (string cls in classNames) {
+            IntPtr h = FindWindowEx(notepadHwnd, IntPtr.Zero, cls, null);
+            if (h != IntPtr.Zero) return h;
+        }
+        return IntPtr.Zero;
+    }
+
+    public static void AppendText(IntPtr editHwnd, string text) {
+        SendMessage(editHwnd, EM_SETSEL, new IntPtr(-1), new IntPtr(-1));
+        SendMessage(editHwnd, EM_REPLACESEL, new IntPtr(1), text);
+    }
+}
+"@
+
+    $notepadProc = Start-Process notepad -PassThru
+    $deadline = (Get-Date).AddSeconds(5)
+    $editHwnd = [IntPtr]::Zero
+
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 200
+        $notepadProc.Refresh()
+        $hwnd = $notepadProc.MainWindowHandle
+        if ($hwnd -ne [IntPtr]::Zero) {
+            $editHwnd = [NotepadInjector]::FindEditControl($hwnd)
+            if ($editHwnd -ne [IntPtr]::Zero) { break }
+        }
+    }
+
+    if ($editHwnd -eq [IntPtr]::Zero) {
+        if ($closeTime -ge 0) { Start-Sleep -Seconds $closeTime }
+        $notepadProc.CloseMainWindow() | Out-Null
+        return
+    }
 
     $intervalMs = 0
     if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
@@ -18,25 +67,17 @@ if ($useNotepad) {
         if ($intervalMs -lt 1) { $intervalMs = 1 }
     }
 
-    $typed = ""
     foreach ($ch in $fullMsg.ToCharArray()) {
-        $typed += $ch
+        [NotepadInjector]::AppendText($editHwnd, $ch.ToString())
         if ($intervalMs -gt 0) { Start-Sleep -Milliseconds $intervalMs }
     }
 
-    [System.IO.File]::WriteAllText($filePath, $typed, [System.Text.Encoding]::UTF8)
-
-    $notepadProc = Start-Process notepad $filePath -PassThru
-
     if ($closeTime -ge 0) {
         Start-Sleep -Seconds $closeTime
+        $notepadProc.CloseMainWindow() | Out-Null
     } else {
         $notepadProc.WaitForExit()
     }
-
-    $notepadProc.CloseMainWindow() | Out-Null
-    Start-Sleep -Milliseconds 500
-    Remove-Item $filePath -Force -ErrorAction SilentlyContinue
 
 } else {
     $form = New-Object System.Windows.Forms.Form
@@ -54,11 +95,9 @@ if ($useNotepad) {
     $form.Controls.Add($label)
 
     $charIndex = 0
-    $totalChars = $fullMsg.Length
-
     $intervalMs = 1
-    if ($typeTime -gt 0 -and $totalChars -gt 0) {
-        $intervalMs = [int](($typeTime * 1000.0) / $totalChars)
+    if ($typeTime -gt 0 -and $fullMsg.Length -gt 0) {
+        $intervalMs = [int](($typeTime * 1000.0) / $fullMsg.Length)
         if ($intervalMs -lt 1) { $intervalMs = 1 }
     }
 
@@ -79,7 +118,6 @@ if ($useNotepad) {
         }
     })
     $typeTimer.Start()
-
     $form.ShowDialog()
     $typeTimer.Stop()
 }
