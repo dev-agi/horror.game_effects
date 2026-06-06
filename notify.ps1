@@ -5,64 +5,69 @@ try {
     $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
     if (-not $p) { exit }
 
-    $logoPath = "$env:TEMP\logo_$uid.ico"
+    $logoPath = "$env:TEMP\logo_$uid.png"
     if ($p.logo) {
         $wclient = New-Object System.Net.WebClient
-        $wclient.DownloadFile($p.logo, "$env:TEMP\temp_$uid.png")
-        if (Test-Path "$env:TEMP\temp_$uid.png") {
-            $bmp = New-Object System.Drawing.Bitmap("$env:TEMP\temp_$uid.png")
-            $iconHandle = $bmp.GetHicon()
-            $icon = [System.Drawing.Icon]::FromHandle($iconHandle)
-            $fs = New-Object System.IO.FileStream($logoPath, [System.IO.FileMode]::Create)
-            $icon.Save($fs)
-            $fs.Close()
-            $icon.Dispose()
-            $bmp.Dispose()
-            Remove-Item "$env:TEMP\temp_$uid.png" -Force -ErrorAction SilentlyContinue
-        }
+        $wclient.DownloadFile($p.logo, $logoPath)
     }
 
-    $xml = @"
-<toast>
-    <visual>
-        <binding template="ToastGeneric">
-            <text>$($p.title)</text>
-            <text>$($p.text)</text>
-            $([string]::IsNullOrEmpty($p.logo) ? "" : "<image placement=`"appLogoOverride`" src=`"$logoPath`"/>")
-        </binding>
-    </visual>
-</toast>
-"@
+    [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
 
-    $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
-    $xmlDoc.LoadXml($xml)
+    $xml = New-Object System.Text.StringBuilder
+    [void]$xml.Append("<toast><visual><binding template='ToastGeneric'>")
+    [void]$xml.Append("<text>$($p.title)</text>")
+    [void]$xml.Append("<text>$($p.text)</text>")
+    if (Test-Path $logoPath) {
+        [void]$xml.Append("<image placement='appLogoOverride' src='$logoPath'/>")
+    }
+    [void]$xml.Append("</binding></visual></toast>")
 
-    $appId = "Windows.SystemToast.Background"
-    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
-    $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
+    $xmlDoc = New-Object -ComObject Microsoft.XMLDOM
+    [void]$xmlDoc.loadXML($xml.ToString())
 
-    $clicked = $false
-    $startTime = Get-Date
+    $wscript = New-Object -ComObject WScript.Shell
+    $regPath = "HKCU\SOFTWARE\Classes\AppId\PowershellNotification"
+    $wscript.RegWrite("$regPath\", "PowershellNotification", "REG_SZ")
+    $wscript.RegWrite("$regPath\ShowInActionCenter", 1, "REG_DWORD")
 
-    $activatedEvent = Register-ObjectEvent -InputObject $toast -EventName "Activated" -Action {
-        $global:clicked = $true
+    $asTask = [PowerShell]::Create().AddScript({
+        param($xmlString, $time, $connectionId, $pRoot)
+        try {
+            [void][System.Reflection.Assembly]::LoadWithPartialName("System.Runtime.InteropServices.WindowsRuntime")
+            
+            $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
+            $xmlDoc.LoadXml($xmlString)
+            
+            $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
+            $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("PowershellNotification")
+            
+            $clicked = $false
+            $timer = [System.Diagnostics.Stopwatch]::StartNew()
+            
+            $activated = Register-ObjectEvent -InputObject $toast -EventName "Activated" -Action { $global:clicked = $true }
+            
+            $notifier.Show($toast)
+            
+            while ($timer.Elapsed.TotalSeconds -lt $time -and -not $global:clicked) {
+                Start-Sleep -Milliseconds 50
+            }
+            
+            if ($global:clicked) {
+                @{ connectionId = $connectionId; answer = "clicked" } | ConvertTo-Json -Compress | Set-Content "$pRoot\..\response_$($connectionId).json" -Encoding UTF8
+            }
+            
+            Unregister-Event -SourceIdentifier $activated.Name -ErrorAction SilentlyContinue
+        } catch {}
+    }).AddArgument($xml.ToString()).AddArgument($p.time).AddArgument($p.connectionId).AddArgument($PSScriptRoot)
+    
+    $job = $asTask.BeginInvoke()
+    
+    $mainTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    while (-not $job.IsCompleted -and $mainTimer.Elapsed.TotalSeconds -lt ($p.time + 2)) {
+        Start-Sleep -Milliseconds 100
     }
 
-    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
-
-    while (((Get-Date) - $startTime).TotalSeconds -lt $p.time -and -not $global:clicked) {
-        Start-Sleep -Milliseconds 50
-    }
-
-    if ($global:clicked) {
-        $responsePath = "$PSScriptRoot\..\response_$($p.connectionId).json"
-        @{
-            connectionId = $p.connectionId
-            answer = "clicked"
-        } | ConvertTo-Json -Compress | Set-Content $responsePath -Encoding UTF8
-    }
-
-    Unregister-Event -SourceIdentifier $activatedEvent.Name -ErrorAction SilentlyContinue
+    $asTask.Dispose()
     if (Test-Path $logoPath) { Remove-Item $logoPath -Force -ErrorAction SilentlyContinue }
 } catch {
     exit
