@@ -1,97 +1,54 @@
 $uid = $args[0]
-if (-not $uid) { exit }
+$p = $null
+
+if ($uid) {
+    $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
+}
+
+$title = "HorrorGame"
+$text = "He is watching you.."
+$time = 10
+
+if ($null -ne $p) {
+    if ($p.title) { $title = $p.title }
+    if ($p.text)  { $text  = $p.text  }
+    if ($p.time)  { $time  = $p.time  }
+}
 
 try {
-    $p = Get-Content "$PSScriptRoot\params_$uid.json" -ErrorAction SilentlyContinue | ConvertFrom-Json
-    if (-not $p) { exit }
-
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    $logoPath = "$env:TEMP\logo_$uid.ico"
-
-    try {
-        if ($p.logo) {
-            $tempPng = "$env:TEMP\temp_$uid.png"
-
-            $wc = New-Object System.Net.WebClient
-            $wc.DownloadFile($p.logo, $tempPng)
-            $wc.Dispose()
-
-            if (Test-Path $tempPng) {
-                $bmp = New-Object System.Drawing.Bitmap($tempPng)
-                $icon = [System.Drawing.Icon]::FromHandle($bmp.GetHicon())
-
-                $fs = [System.IO.File]::Create($logoPath)
-                $icon.Save($fs)
-                $fs.Close()
-
-                $bmp.Dispose()
-                $icon.Dispose()
-
-                Remove-Item $tempPng -Force -ErrorAction SilentlyContinue
-            }
-        }
-    } catch {}
-
-    $notify = New-Object System.Windows.Forms.NotifyIcon
-
-    try {
-        if (Test-Path $logoPath) {
-            $notify.Icon = New-Object System.Drawing.Icon($logoPath)
-        } else {
-            $notify.Icon = [System.Drawing.SystemIcons]::Application
-        }
-    } catch {
-        $notify.Icon = [System.Drawing.SystemIcons]::Application
-    }
-
-    $notify.Visible = $true
-
-    Start-Sleep -Milliseconds 750
-
-    $notify.BalloonTipTitle = [string]$p.title
-    $notify.BalloonTipText = [string]$p.text
-    $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
+    $notification = New-Object System.Windows.Forms.NotifyIcon
+    $notification.Icon = [System.Drawing.SystemIcons]::Application
+    $notification.BalloonTipTitle = $title
+    $notification.BalloonTipText = $text
+    $notification.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::None
+    $notification.Visible = $true
+    $notification.ShowBalloonTip($time * 1000)
 
     $global:clicked = $false
-
-    $event = Register-ObjectEvent -InputObject $notify -EventName BalloonTipClicked -Action {
+    $clickAction = Register-ObjectEvent -InputObject $notification -EventName "BalloonTipClicked" -Action {
         $global:clicked = $true
     }
 
-    $duration = [Math]::Max(1, [int]$p.time)
-
-    $notify.ShowBalloonTip($duration * 1000)
-
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-
-    while ($sw.Elapsed.TotalSeconds -lt $duration) {
-        [System.Windows.Forms.Application]::DoEvents()
-
-        if ($global:clicked) {
-            break
-        }
-
-        Start-Sleep -Milliseconds 50
+    $startTime = Get-Date
+    while ((((Get-Date) - $startTime).TotalSeconds -lt $time) -and (-not $global:clicked)) {
+        Start-Sleep -Milliseconds 100
     }
 
-    if ($global:clicked -and $p.connectionId) {
+    if ($global:clicked -and ($null -ne $p) -and $p.connectionId) {
         @{
             connectionId = $p.connectionId
             answer = "clicked"
         } | ConvertTo-Json -Compress | Set-Content "$PSScriptRoot\..\response_$($p.connectionId).json" -Encoding UTF8
     }
 
-    if ($event) {
-        Unregister-Event -SourceIdentifier $event.Name -ErrorAction SilentlyContinue
-    }
+    Unregister-Event -SourceIdentifier $clickAction.Name -ErrorAction SilentlyContinue
+} catch {}
 
-    $notify.Visible = $false
-    $notify.Dispose()
-
-    if (Test-Path $logoPath) {
-        Remove-Item $logoPath -Force -ErrorAction SilentlyContinue
-    }
-} catch {
+Start-Sleep -Seconds 1
+if ($null -ne $notification) {
+    $notification.Visible = $false
+    $notification.Dispose()
 }
